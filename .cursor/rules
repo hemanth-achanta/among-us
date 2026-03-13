@@ -1,0 +1,40 @@
+# Per-commit summary and auto-commit rules for Cursor AI
+
+- On every editing session where you modify the codebase, you must:
+  - Before ending your turn, generate a concise, human-readable summary of JUST the changes made in this session.
+  - Write that summary into a markdown file named `COMMIT_NOTES.md` in the repository root.
+    - Completely overwrite any previous contents of `COMMIT_NOTES.md` so it only describes this session’s changes.
+    - The structure of `COMMIT_NOTES.md` should be:
+      - A level-2 heading with a short title (e.g. "## Changes in this commit").
+      - A bullet list of the key changes, focusing on behavior and intent, not line-by-line diffs.
+      - A line indicating run status in the form `Run status: Y` or `Run status: N` based on the user’s most recent answer (see below).
+      - No references to previous commits or older history.
+
+- After updating `COMMIT_NOTES.md`, you must create a git commit for this session, but only if the user has explicitly asked for a commit:
+  - If the user has requested a commit, then:
+    - Stage ALL modified, added, and removed files, including `COMMIT_NOTES.md`.
+    - Use a clear, descriptive commit message that summarizes the main change in 1 short line.
+    - Only run git commands via the shell, in this order:
+      - `git add -A`
+      - `git commit -m "<short, descriptive message>"`
+    - Do NOT run `git push` unless explicitly asked by the user in this session.
+  - If the user has not requested a commit, do not run any git commit or push commands.
+
+- Before performing any git push (when the user has explicitly requested a push):
+  - Ask the user to confirm whether the current commit "runs properly" with a Y/N style answer.
+    - If the user answers with `Y` (or equivalent yes), treat this as "this commit is running properly".
+    - If the user answers with `N` (or equivalent no), treat this as "this commit does not run properly".
+    - Any explicit answer the user gives (Y or N) must be recorded.
+  - Update (or regenerate) `COMMIT_NOTES.md` so that it includes a single line indicating the most recent run status in the form `Run status: Y` or `Run status: N`.
+    - Overwrite any previous run-status line so only the latest status for this commit is present.
+  - Commit this updated status as part of the same commit, or as an additional commit if necessary, before running `git push`.
+  - Then, and only if the user has asked for it, run `git push` for the relevant branch.
+
+- Do NOT commit files that look like secrets (e.g. `.env`, `*.pem`, API keys). If such files are changed, warn the user instead of committing them.
+
+- When writing `COMMIT_NOTES.md`:
+  - Do not include git diff output.
+  - Do not mention other commits or prior summaries.
+  - Describe only what changed in this commit: new features, behavior changes, bug fixes, refactors, and any migration steps if needed.
+
+- Always follow these rules unless the user explicitly overrides them for a specific session.

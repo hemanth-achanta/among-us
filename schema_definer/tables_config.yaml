@@ -12,11 +12,14 @@
 #   - description: override the auto-generated table description
 
 tables:
-  # - schema: data_model
-  #   table: doc_consult_orders
+  - schema: data_model
+    table: doc_consult_orders
 
   - schema: pre_analytics
     table: doc_consult_metrics  
+
+  - schema: mstr_tables
+    table: doc_consult_session_attribution  
 
     # Optional overrides:
     # name: doc_consult_orders

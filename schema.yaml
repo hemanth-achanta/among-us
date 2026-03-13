@@ -1,4 +1,327 @@
 tables:
+  hive.data_model.doc_consult_orders:
+    description: Auto-generated from hive.data_model.doc_consult_orders.
+    columns:
+      order_id:
+        type: VARCHAR
+        description: Unique identifier for the consultation order
+      parent_id:
+        type: INTEGER
+        description: Parent order identifier linking to the main transaction
+      order_placed_at:
+        type: TIMESTAMP(3)
+        description: Timestamp when the consultation order was placed
+      order_placed_date:
+        type: DATE
+        description: Date when the consultation order was placed
+      customer_id:
+        type: VARCHAR
+        description: Unique identifier for the customer placing the order
+      order_source:
+        type: VARCHAR
+        description: Channel through which the order was placed (e.g., Mobile_Website,
+          Android_App)
+      attributes_vertical:
+        type: VARCHAR
+        description: Product vertical for the order (e.g., CONSULTATION)
+      order_status:
+        type: VARCHAR
+        description: Current status of the order (e.g., COMPLETED, CANCELLED)
+      delivered_date:
+        type: DATE
+        description: Date when the consultation was completed or delivered
+      placed_mrp:
+        type: DOUBLE
+        description: Maximum retail price at the time of order placement
+      placed_discounted_mrp:
+        type: DOUBLE
+        description: Discounted price charged to customer at order placement
+      fulfilled_mrp:
+        type: DOUBLE
+        description: Maximum retail price for the fulfilled portion of the order
+      fulfilled_discounted_mrp:
+        type: DOUBLE
+        description: Discounted price for the fulfilled portion of the order
+      placed_wallet_burn:
+        type: DOUBLE
+        description: Wallet amount deducted at order placement
+      placed_pld:
+        type: DOUBLE
+        description: Platform loyalty discount applied at order placement
+      placed_coupon_burn:
+        type: DOUBLE
+        description: Coupon discount applied at order placement
+      fulfilled_wallet_burn:
+        type: DOUBLE
+        description: Wallet amount actually deducted upon fulfillment
+      fulfilled_pld:
+        type: DOUBLE
+        description: Platform loyalty discount actually applied upon fulfillment
+      fulfilled_coupon_burn:
+        type: DOUBLE
+        description: Coupon discount actually applied upon fulfillment
+      total_cashback:
+        type: DOUBLE
+        description: Total cashback earned on the order
+      cancel_reason_text:
+        type: VARCHAR
+        description: Reason provided for order cancellation if applicable
+      canceled_at:
+        type: TIMESTAMP(3)
+        description: Timestamp when the order was cancelled
+      slotid:
+        type: VARCHAR
+        description: Unique identifier for the consultation time slot
+      slot_end_time:
+        type: VARCHAR
+        description: End time of the scheduled consultation slot
+      slot_start_time:
+        type: VARCHAR
+        description: Start time of the scheduled consultation slot
+      consultation_type:
+        type: VARCHAR
+        description: Type of consultation (e.g., VIDEO, AUDIO)
+      doctor_id:
+        type: VARCHAR
+        description: Unique identifier for the consulting doctor
+      doctor_name:
+        type: VARCHAR
+        description: Name of the consulting doctor
+      doctor_type:
+        type: VARCHAR
+        description: Classification of doctor (e.g., GP, Specialist)
+      doctor_specialization:
+        type: VARCHAR
+        description: Medical specialization of the doctor
+      patient_name:
+        type: VARCHAR
+        description: Name of the patient (tokenized for privacy)
+      patient_gender:
+        type: VARCHAR
+        description: Gender of the patient
+      patient_age:
+        type: VARCHAR
+        description: Age of the patient
+      external_rx_id:
+        type: VARCHAR
+        description: External prescription identifier from the consultation
+      child_order_status:
+        type: VARCHAR(500)
+        description: Status of child orders associated with the parent order
+      order_created_flag:
+        type: VARCHAR(500)
+        description: Flag indicating whether order was successfully created in system
+      coupon_code:
+        type: VARCHAR(500)
+        description: Coupon code applied to the order if any
+      reg_month:
+        type: VARCHAR(500)
+        description: Month when the customer registered
+      loyalty_status:
+        type: VARCHAR(500)
+        description: Customer's enrollment status in loyalty program
+      latest_order_city:
+        type: VARCHAR(500)
+        description: City where the customer placed their latest order
+      reg_status:
+        type: VARCHAR(500)
+        description: Registration status of the customer (e.g., Old, New)
+      pe_status:
+        type: VARCHAR(500)
+        description: Patient engagement status
+      pharma_status:
+        type: VARCHAR(500)
+        description: Customer's pharmacy purchase history status
+      diag_status:
+        type: VARCHAR(500)
+        description: Customer's diagnostics service usage status
+      consult_status:
+        type: VARCHAR(500)
+        description: Customer's consultation service usage status
+      digi_flag:
+        type: INTEGER
+        description: Flag indicating digital/online consultation (1=yes, 0=no)
+      crosssold_status:
+        type: VARCHAR(500)
+        description: Status of cross-selling attempts (e.g., New, Old)
+      user_activity_segment:
+        type: VARCHAR(500)
+        description: Customer activity segment classification
+      month:
+        type: INTEGER
+        description: Month of the order placement
+      week_start:
+        type: DATE
+        description: Start date of the week containing the order
+      isfreefollowupavailable:
+        type: VARCHAR
+        description: Flag indicating if free follow-up consultation is available
+      pastconsultationorderid:
+        type: VARCHAR
+        description: Order ID of previous consultation if applicable
+      dt:
+        type: DATE
+        description: Data load date or partition date
+    sample_rows:
+    - order_id: '682106507122552832'
+      parent_id: 36900596
+      order_placed_at: '2026-02-16 00:16:44.209'
+      order_placed_date: '2026-02-16'
+      customer_id: '50030311'
+      order_source: Mobile_Website
+      attributes_vertical: CONSULTATION
+      order_status: CANCELLED
+      delivered_date: null
+      placed_mrp: 349.0
+      placed_discounted_mrp: 198.93
+      fulfilled_mrp: 0.0
+      fulfilled_discounted_mrp: 0.0
+      placed_wallet_burn: 0.0
+      placed_pld: 150.07
+      placed_coupon_burn: 0.0
+      fulfilled_wallet_burn: 0.0
+      fulfilled_pld: 0.0
+      fulfilled_coupon_burn: 0.0
+      total_cashback: 0.0
+      cancel_reason_text: Auto-Cancellation at TOMS - Order confirmation failed
+      canceled_at: '2026-02-16 00:20:44.543'
+      slotid: 697c9425e04c270012219431
+      slot_end_time: '2026-02-15 19:15:00'
+      slot_start_time: '2026-02-15 19:00:00'
+      consultation_type: VIDEO
+      doctor_id: '1007270632'
+      doctor_name: Pathan irshad Khan
+      doctor_type: GP
+      doctor_specialization: General Physician
+      patient_name: token://A2/b8d3fb7d-7c95-47d5-81e7-c74b57e80fde
+      patient_gender: Male
+      patient_age: ''
+      external_rx_id: null
+      child_order_status: CHILD_ORDER_CANCELLED
+      order_created_flag: '0'
+      coupon_code: null
+      reg_month: '2025-05-01'
+      loyalty_status: Never Enrolled
+      latest_order_city: 'NULL'
+      reg_status: Old
+      pe_status: RNB
+      pharma_status: null
+      diag_status: null
+      consult_status: Consult New
+      digi_flag: 0
+      crosssold_status: New
+      user_activity_segment: Never Ordered
+      month: 2
+      week_start: '2026-02-13'
+      isfreefollowupavailable: 'true'
+      pastconsultationorderid: ''
+      dt: '2026-02-16'
+    - order_id: '682107391466385408'
+      parent_id: 36900634
+      order_placed_at: '2026-02-16 00:20:15.056'
+      order_placed_date: '2026-02-16'
+      customer_id: '50030311'
+      order_source: Mobile_Website
+      attributes_vertical: CONSULTATION
+      order_status: COMPLETED
+      delivered_date: '2026-02-16'
+      placed_mrp: 349.0
+      placed_discounted_mrp: 198.93
+      fulfilled_mrp: 349.0
+      fulfilled_discounted_mrp: 198.93
+      placed_wallet_burn: 0.0
+      placed_pld: 150.07
+      placed_coupon_burn: 0.0
+      fulfilled_wallet_burn: 0.0
+      fulfilled_pld: 150.07
+      fulfilled_coupon_burn: 0.0
+      total_cashback: 0.0
+      cancel_reason_text: None
+      canceled_at: null
+      slotid: 6962236430c6b40012471a32
+      slot_end_time: '2026-02-15 19:30:00'
+      slot_start_time: '2026-02-15 19:15:00'
+      consultation_type: VIDEO
+      doctor_id: '709241758'
+      doctor_name: Amogh Jawale
+      doctor_type: GP
+      doctor_specialization: General Physician
+      patient_name: token://A2/8087dda0-efdd-4a15-9701-53d8d2d97218
+      patient_gender: Female
+      patient_age: '25'
+      external_rx_id: 69921cf532533427a9819f9c
+      child_order_status: CHILD_ORDER_COMPLETED
+      order_created_flag: '1'
+      coupon_code: null
+      reg_month: '2025-05-01'
+      loyalty_status: Never Enrolled
+      latest_order_city: 'NULL'
+      reg_status: Old
+      pe_status: RNB
+      pharma_status: null
+      diag_status: null
+      consult_status: Consult New
+      digi_flag: 1
+      crosssold_status: New
+      user_activity_segment: Never Ordered
+      month: 2
+      week_start: '2026-02-13'
+      isfreefollowupavailable: 'true'
+      pastconsultationorderid: ''
+      dt: '2026-02-16'
+    - order_id: '682109157893320704'
+      parent_id: 36900711
+      order_placed_at: '2026-02-16 00:27:16.115'
+      order_placed_date: '2026-02-16'
+      customer_id: '3686513'
+      order_source: Android_App
+      attributes_vertical: CONSULTATION
+      order_status: COMPLETED
+      delivered_date: '2026-02-16'
+      placed_mrp: 349.0
+      placed_discounted_mrp: 188.98
+      fulfilled_mrp: 349.0
+      fulfilled_discounted_mrp: 188.98
+      placed_wallet_burn: 9.95
+      placed_pld: 150.07
+      placed_coupon_burn: 0.0
+      fulfilled_wallet_burn: 9.95
+      fulfilled_pld: 150.07
+      fulfilled_coupon_burn: 0.0
+      total_cashback: 0.0
+      cancel_reason_text: None
+      canceled_at: null
+      slotid: 697c9425e04c270012219431
+      slot_end_time: '2026-02-15 19:15:00'
+      slot_start_time: '2026-02-15 19:00:00'
+      consultation_type: AUDIO
+      doctor_id: '1007270632'
+      doctor_name: Pathan irshad Khan
+      doctor_type: GP
+      doctor_specialization: General Physician
+      patient_name: token://A2/daa0c9ff-3591-4596-969a-82e30451e765
+      patient_gender: Female
+      patient_age: '32'
+      external_rx_id: 699219d232533427a9819f89
+      child_order_status: CHILD_ORDER_COMPLETED
+      order_created_flag: '1'
+      coupon_code: null
+      reg_month: '2019-07-01'
+      loyalty_status: 'No'
+      latest_order_city: Mumbai
+      reg_status: Old
+      pe_status: Old
+      pharma_status: Pharma_Old
+      diag_status: null
+      consult_status: Consult New
+      digi_flag: 0
+      crosssold_status: Old
+      user_activity_segment: Dormant_181_365_days
+      month: 2
+      week_start: '2026-02-13'
+      isfreefollowupavailable: 'true'
+      pastconsultationorderid: ''
+      dt: '2026-02-16'
   hive.pre_analytics.doc_consult_metrics:
     description: Auto-generated from hive.pre_analytics.doc_consult_metrics.
     columns:
@@ -7,30 +330,30 @@ tables:
         description: Date of the consultation metric record
       freq:
         type: VARCHAR
-        description: Frequency level of the metric aggregation
+        description: Frequency level of the data aggregation (e.g., Day, Week, Month)
       customer_type:
         type: VARCHAR
-        description: Classification of customer based on acquisition cohort or lifecycle
-          stage
+        description: Customer acquisition cohort or lifecycle stage (e.g., 60D Acquisition)
       loyalty_flag:
         type: VARCHAR
         description: Indicator of whether customer has loyalty program membership
           or status
       cancel_reason_text:
         type: VARCHAR
-        description: Reason provided for cancellation of consultation or appointment
+        description: Reason provided for consultation or appointment cancellation
       doctor_type:
         type: VARCHAR
-        description: Classification of doctor such as General Practitioner or specialist
+        description: Classification of doctor (e.g., GP, Specialist)
       user_type_monthly:
         type: VARCHAR(500)
-        description: User classification based on monthly activity pattern
+        description: User engagement classification based on monthly activity and
+          order fulfillment status
       user_type:
         type: VARCHAR(500)
-        description: User classification indicating if customer is new or returning
+        description: User classification indicating whether customer is new or existing
       doctor_name:
         type: VARCHAR
-        description: Name of the doctor providing the consultation
+        description: Name of the consulting doctor
       order_id:
         type: VARCHAR
         description: Unique identifier for the consultation order
@@ -39,158 +362,92 @@ tables:
         description: Unique identifier for the customer
       order_category:
         type: VARCHAR
-        description: Category of the order such as Paid or Free Followup
+        description: Type of consultation order (e.g., Free, Paid, FreeFollowup)
       order_source:
         type: VARCHAR
-        description: Channel through which the order was placed such as iOS App or
-          Android App
+        description: Channel through which the order was placed (e.g., Mobile_Website,
+          App)
       coupon_code:
         type: VARCHAR(500)
         description: Promotional or discount code applied to the order
       doctor_specialization:
         type: VARCHAR
-        description: Medical specialization of the doctor
+        description: Medical specialty of the consulting doctor
       consult_status:
         type: VARCHAR(500)
-        description: Status of the consultation indicating if it is new or old
+        description: Status of the consultation (e.g., Consult New, Consult Old)
       pharma_status:
         type: VARCHAR(500)
-        description: Status of pharmacy services associated with the consultation
+        description: Status of pharmacy-related services associated with the consultation
       diag_status:
         type: VARCHAR(500)
         description: Status of diagnostic services associated with the consultation
       user_activity_segment:
         type: VARCHAR(500)
-        description: Segment classification based on user purchase and engagement
-          history
+        description: Customer engagement segment based on activity level and churn
+          status
       pe_status:
         type: VARCHAR
-        description: Status indicating if patient engagement is new or returning
+        description: Physical examination status (e.g., New, Old)
       digi_flag:
         type: INTEGER
-        description: Binary flag indicating digital or online consultation
+        description: Binary indicator of whether the consultation was digital or online
       completed_consult_orders:
         type: BIGINT
         description: Count of successfully completed consultation orders
       total_consult_orders:
         type: BIGINT
-        description: Total count of all consultation orders placed
+        description: Total number of consultation orders placed
       cancelled_consult_orders:
         type: BIGINT
-        description: Count of consultation orders that were cancelled
+        description: Count of cancelled consultation orders
       no_of_booked_appointments:
         type: BIGINT
-        description: Count of appointments booked
+        description: Total number of appointments booked
       no_of_cancelled_appointments:
         type: BIGINT
-        description: Count of appointments cancelled
+        description: Total number of appointments cancelled
       no_of_completed_appointments:
         type: BIGINT
-        description: Count of appointments successfully completed
+        description: Total number of appointments completed
       placed_mrp:
         type: BIGINT
-        description: Maximum retail price of items placed in orders
+        description: Maximum retail price of consultations placed
       placed_discounted_mrp:
         type: BIGINT
-        description: Discounted price of items placed in orders
+        description: Discounted price of consultations placed
       placed_wallet_burn:
         type: BIGINT
-        description: Wallet or credit amount used for placed orders
+        description: Wallet or credit amount used for consultations placed
       fulfilled_mrp:
         type: BIGINT
-        description: Maximum retail price of items fulfilled or delivered
+        description: Maximum retail price of consultations fulfilled
       fulfilled_discounted_mrp:
         type: BIGINT
-        description: Discounted price of items fulfilled or delivered
+        description: Discounted price of consultations fulfilled
       fulfilled_wallet_burn:
         type: BIGINT
-        description: Wallet or credit amount used for fulfilled orders
+        description: Wallet or credit amount used for consultations fulfilled
     sample_rows:
-    - dt: '2026-01-01'
+    - dt: '2025-12-30'
       freq: Day
       customer_type: 60D Acquisition
       loyalty_flag: '0'
       cancel_reason_text: ''
       doctor_type: GP
-      user_type_monthly: null
+      user_type_monthly: Placed_but_not_fulfilled
       user_type: New
-      doctor_name: Preeti Bhardwaj
-      order_id: '665561414277652480'
-      customer_id: '54433511'
-      order_category: Paid
-      order_source: iOS_App
-      coupon_code: null
-      doctor_specialization: General Physician
-      consult_status: Consult New
-      pharma_status: null
-      diag_status: null
-      user_activity_segment: Never Ordered
-      pe_status: New
-      digi_flag: 0
-      completed_consult_orders: 0
-      total_consult_orders: 1
-      cancelled_consult_orders: 1
-      no_of_booked_appointments: 1
-      no_of_cancelled_appointments: 1
-      no_of_completed_appointments: 0
-      placed_mrp: 249
-      placed_discounted_mrp: 199
-      placed_wallet_burn: 0
-      fulfilled_mrp: 0
-      fulfilled_discounted_mrp: 0
-      fulfilled_wallet_burn: 0
-    - dt: '2026-01-03'
-      freq: Day
-      customer_type: 60D Acquisition
-      loyalty_flag: '0'
-      cancel_reason_text: ''
-      doctor_type: GP
-      user_type_monthly: null
-      user_type: New
-      doctor_name: Seena Mol
-      order_id: '666436063208763392'
-      customer_id: '37554850'
-      order_category: Paid
-      order_source: iOS_App
-      coupon_code: null
-      doctor_specialization: General Physician
-      consult_status: Consult Old
-      pharma_status: null
-      diag_status: null
-      user_activity_segment: Never Ordered
-      pe_status: Old
-      digi_flag: 0
-      completed_consult_orders: 0
-      total_consult_orders: 1
-      cancelled_consult_orders: 1
-      no_of_booked_appointments: 1
-      no_of_cancelled_appointments: 1
-      no_of_completed_appointments: 0
-      placed_mrp: 249
-      placed_discounted_mrp: 199
-      placed_wallet_burn: 0
-      fulfilled_mrp: 0
-      fulfilled_discounted_mrp: 0
-      fulfilled_wallet_burn: 0
-    - dt: '2026-01-01'
-      freq: Day
-      customer_type: 60D Acquisition
-      loyalty_flag: '0'
-      cancel_reason_text: ''
-      doctor_type: GP
-      user_type_monthly: null
-      user_type: New
-      doctor_name: Shafiullah Baig
-      order_id: '665777894516449280'
-      customer_id: '54377557'
+      doctor_name: Jaideep Sharma
+      order_id: '664955022553440256'
+      customer_id: '52126145'
       order_category: FreeFollowup
-      order_source: Android_App
+      order_source: Mobile_Website
       coupon_code: null
       doctor_specialization: General Physician
       consult_status: Consult Old
       pharma_status: null
       diag_status: null
-      user_activity_segment: Never Ordered
+      user_activity_segment: Active
       pe_status: Old
       digi_flag: 0
       completed_consult_orders: 0
@@ -205,4 +462,287 @@ tables:
       fulfilled_mrp: 0
       fulfilled_discounted_mrp: 0
       fulfilled_wallet_burn: 0
+    - dt: '2025-12-30'
+      freq: Day
+      customer_type: 60D Acquisition
+      loyalty_flag: '0'
+      cancel_reason_text: ''
+      doctor_type: GP
+      user_type_monthly: Placed_but_not_fulfilled
+      user_type: New
+      doctor_name: Mohsin Husain
+      order_id: '664878937745887232'
+      customer_id: '52126145'
+      order_category: Free
+      order_source: Mobile_Website
+      coupon_code: CON-VL5B7634-2CB5E1
+      doctor_specialization: General Physician
+      consult_status: Consult Old
+      pharma_status: null
+      diag_status: null
+      user_activity_segment: Active
+      pe_status: Old
+      digi_flag: 1
+      completed_consult_orders: 0
+      total_consult_orders: 1
+      cancelled_consult_orders: 1
+      no_of_booked_appointments: 1
+      no_of_cancelled_appointments: 1
+      no_of_completed_appointments: 0
+      placed_mrp: 249
+      placed_discounted_mrp: 0
+      placed_wallet_burn: 0
+      fulfilled_mrp: 0
+      fulfilled_discounted_mrp: 0
+      fulfilled_wallet_burn: 0
+    - dt: '2026-01-03'
+      freq: Day
+      customer_type: 60D Acquisition
+      loyalty_flag: '0'
+      cancel_reason_text: ''
+      doctor_type: GP
+      user_type_monthly: null
+      user_type: New
+      doctor_name: Shafiullah Baig
+      order_id: '666444369071534080'
+      customer_id: '38455212'
+      order_category: Free
+      order_source: Mobile_Website
+      coupon_code: CON-VL2D22F0-69806F
+      doctor_specialization: General Physician
+      consult_status: Consult New
+      pharma_status: null
+      diag_status: Diag_Old
+      user_activity_segment: Churned_>365_days
+      pe_status: Old
+      digi_flag: 1
+      completed_consult_orders: 0
+      total_consult_orders: 1
+      cancelled_consult_orders: 1
+      no_of_booked_appointments: 1
+      no_of_cancelled_appointments: 1
+      no_of_completed_appointments: 0
+      placed_mrp: 249
+      placed_discounted_mrp: 0
+      placed_wallet_burn: 0
+      fulfilled_mrp: 0
+      fulfilled_discounted_mrp: 0
+      fulfilled_wallet_burn: 0
+  hive.mstr_tables.doc_consult_session_attribution:
+    description: Auto-generated from hive.mstr_tables.doc_consult_session_attribution.
+    columns:
+      session_id:
+        type: VARCHAR
+        description: Unique identifier for each user session
+      session_date:
+        type: DATE
+        description: Date on which the session occurred
+      session_start_ts:
+        type: TIMESTAMP(3)
+        description: Timestamp marking the start of the session
+      platform:
+        type: VARCHAR
+        description: Device platform used for the session (e.g., android, ios, web)
+      session_source:
+        type: VARCHAR
+        description: Traffic source or channel through which the session originated
+      first_source_page_name:
+        type: VARCHAR
+        description: Name of the first page viewed in the session
+      city:
+        type: VARCHAR
+        description: City location of the user during the session
+      pincode:
+        type: VARCHAR
+        description: Postal code of the user's location
+      first_consult_page:
+        type: VARCHAR
+        description: First consultation-related page accessed in the session
+      first_landing_from:
+        type: VARCHAR
+        description: Referrer or source of the first landing page
+      reached_doc_consult_hp:
+        type: INTEGER
+        description: Flag indicating if user reached the doctor consultation homepage
+      reached_speciality_selection_hp:
+        type: INTEGER
+        description: Flag indicating if user reached the speciality selection page
+      reached_doctor_selection_hp:
+        type: INTEGER
+        description: Flag indicating if user reached the doctor selection page
+      reached_patient_info_hp:
+        type: INTEGER
+        description: Flag indicating if user reached the patient information page
+      reached_slot_selection:
+        type: INTEGER
+        description: Flag indicating if user reached the appointment slot selection
+          page
+      reached_payment_method:
+        type: INTEGER
+        description: Flag indicating if user reached the payment method selection
+          page
+      reached_order_placed:
+        type: INTEGER
+        description: Flag indicating if user completed and placed an order
+      max_funnel_step:
+        type: INTEGER
+        description: Highest step reached in the consultation booking funnel
+      time_to_first_step:
+        type: BIGINT
+        description: Time in milliseconds from session start to reaching the first
+          funnel step
+      time_to_order:
+        type: BIGINT
+        description: Time in milliseconds from session start to order placement
+      total_pageviews:
+        type: INTEGER
+        description: Total number of pages viewed during the session
+      funnel_pageviews:
+        type: INTEGER
+        description: Number of pages viewed within the consultation funnel
+      order_ids:
+        type: VARCHAR
+        description: Comma-separated list of order IDs generated from the session
+      widget_source:
+        type: VARCHAR
+        description: Source or type of widget that initiated the session
+      viewed_health_concern:
+        type: INTEGER
+        description: Count of health concern items viewed by the user
+      clicked_health_concern:
+        type: INTEGER
+        description: Count of health concern items clicked by the user
+      viewed_first_fold:
+        type: INTEGER
+        description: Count of first-fold content items viewed by the user
+      clicked_first_fold:
+        type: INTEGER
+        description: Count of first-fold content items clicked by the user
+      viewed_tile:
+        type: INTEGER
+        description: Count of tile-based content items viewed by the user
+      clicked_tile:
+        type: INTEGER
+        description: Count of tile-based content items clicked by the user
+      viewed_banner_new:
+        type: INTEGER
+        description: Count of new banner designs viewed by the user
+      clicked_banner_new:
+        type: INTEGER
+        description: Count of new banner designs clicked by the user
+      viewed_banner_old:
+        type: INTEGER
+        description: Count of old banner designs viewed by the user
+      clicked_banner_old:
+        type: INTEGER
+        description: Count of old banner designs clicked by the user
+      dt:
+        type: DATE
+        description: Partition date for the table record
+    sample_rows:
+    - session_id: s_a_00038eb6000fd837_2129b062-0d01-4402-b8d3-e10e3627c54e
+      session_date: '2025-07-31'
+      session_start_ts: '2025-07-31 14:21:04.000'
+      platform: android
+      session_source: Organic
+      first_source_page_name: p_splash
+      city: Gorakhpur-1
+      pincode: '273201'
+      first_consult_page: null
+      first_landing_from: null
+      reached_doc_consult_hp: null
+      reached_speciality_selection_hp: null
+      reached_doctor_selection_hp: null
+      reached_patient_info_hp: null
+      reached_slot_selection: null
+      reached_payment_method: null
+      reached_order_placed: 0
+      max_funnel_step: 0
+      time_to_first_step: null
+      time_to_order: null
+      total_pageviews: null
+      funnel_pageviews: null
+      order_ids: null
+      widget_source: null
+      viewed_health_concern: 0
+      clicked_health_concern: 0
+      viewed_first_fold: 0
+      clicked_first_fold: 0
+      viewed_tile: 0
+      clicked_tile: 0
+      viewed_banner_new: 0
+      clicked_banner_new: 0
+      viewed_banner_old: 0
+      clicked_banner_old: 0
+      dt: '2025-07-31'
+    - session_id: s_a_0060aeb30cb1e149_839e1094-c655-412f-b79f-6ad129415154
+      session_date: '2025-07-31'
+      session_start_ts: '2025-07-31 19:15:15.000'
+      platform: android
+      session_source: Organic
+      first_source_page_name: p_splash
+      city: Kota
+      pincode: '324002'
+      first_consult_page: null
+      first_landing_from: null
+      reached_doc_consult_hp: null
+      reached_speciality_selection_hp: null
+      reached_doctor_selection_hp: null
+      reached_patient_info_hp: null
+      reached_slot_selection: null
+      reached_payment_method: null
+      reached_order_placed: 0
+      max_funnel_step: 0
+      time_to_first_step: null
+      time_to_order: null
+      total_pageviews: null
+      funnel_pageviews: null
+      order_ids: null
+      widget_source: null
+      viewed_health_concern: 0
+      clicked_health_concern: 0
+      viewed_first_fold: 0
+      clicked_first_fold: 0
+      viewed_tile: 1
+      clicked_tile: 0
+      viewed_banner_new: 0
+      clicked_banner_new: 0
+      viewed_banner_old: 0
+      clicked_banner_old: 0
+      dt: '2025-07-31'
+    - session_id: s_a_009f818ad4cf0ada_22dcab8b-fe06-410f-94e1-4bf416968c38
+      session_date: '2025-07-31'
+      session_start_ts: '2025-07-31 23:57:21.000'
+      platform: android
+      session_source: Organic
+      first_source_page_name: p_splash
+      city: Mumbai
+      pincode: '400001'
+      first_consult_page: null
+      first_landing_from: null
+      reached_doc_consult_hp: null
+      reached_speciality_selection_hp: null
+      reached_doctor_selection_hp: null
+      reached_patient_info_hp: null
+      reached_slot_selection: null
+      reached_payment_method: null
+      reached_order_placed: 0
+      max_funnel_step: 0
+      time_to_first_step: null
+      time_to_order: null
+      total_pageviews: null
+      funnel_pageviews: null
+      order_ids: null
+      widget_source: null
+      viewed_health_concern: 0
+      clicked_health_concern: 0
+      viewed_first_fold: 0
+      clicked_first_fold: 0
+      viewed_tile: 0
+      clicked_tile: 0
+      viewed_banner_new: 0
+      clicked_banner_new: 0
+      viewed_banner_old: 0
+      clicked_banner_old: 0
+      dt: '2025-07-31'
 relationships: []
