@@ -1,0 +1,208 @@
+tables:
+  hive.pre_analytics.doc_consult_metrics:
+    description: Auto-generated from hive.pre_analytics.doc_consult_metrics.
+    columns:
+      dt:
+        type: DATE
+        description: Date of the consultation metric record
+      freq:
+        type: VARCHAR
+        description: Frequency level of the metric aggregation
+      customer_type:
+        type: VARCHAR
+        description: Classification of customer based on acquisition cohort or lifecycle
+          stage
+      loyalty_flag:
+        type: VARCHAR
+        description: Indicator of whether customer has loyalty program membership
+          or status
+      cancel_reason_text:
+        type: VARCHAR
+        description: Reason provided for cancellation of consultation or appointment
+      doctor_type:
+        type: VARCHAR
+        description: Classification of doctor such as General Practitioner or specialist
+      user_type_monthly:
+        type: VARCHAR(500)
+        description: User classification based on monthly activity pattern
+      user_type:
+        type: VARCHAR(500)
+        description: User classification indicating if customer is new or returning
+      doctor_name:
+        type: VARCHAR
+        description: Name of the doctor providing the consultation
+      order_id:
+        type: VARCHAR
+        description: Unique identifier for the consultation order
+      customer_id:
+        type: VARCHAR
+        description: Unique identifier for the customer
+      order_category:
+        type: VARCHAR
+        description: Category of the order such as Paid or Free Followup
+      order_source:
+        type: VARCHAR
+        description: Channel through which the order was placed such as iOS App or
+          Android App
+      coupon_code:
+        type: VARCHAR(500)
+        description: Promotional or discount code applied to the order
+      doctor_specialization:
+        type: VARCHAR
+        description: Medical specialization of the doctor
+      consult_status:
+        type: VARCHAR(500)
+        description: Status of the consultation indicating if it is new or old
+      pharma_status:
+        type: VARCHAR(500)
+        description: Status of pharmacy services associated with the consultation
+      diag_status:
+        type: VARCHAR(500)
+        description: Status of diagnostic services associated with the consultation
+      user_activity_segment:
+        type: VARCHAR(500)
+        description: Segment classification based on user purchase and engagement
+          history
+      pe_status:
+        type: VARCHAR
+        description: Status indicating if patient engagement is new or returning
+      digi_flag:
+        type: INTEGER
+        description: Binary flag indicating digital or online consultation
+      completed_consult_orders:
+        type: BIGINT
+        description: Count of successfully completed consultation orders
+      total_consult_orders:
+        type: BIGINT
+        description: Total count of all consultation orders placed
+      cancelled_consult_orders:
+        type: BIGINT
+        description: Count of consultation orders that were cancelled
+      no_of_booked_appointments:
+        type: BIGINT
+        description: Count of appointments booked
+      no_of_cancelled_appointments:
+        type: BIGINT
+        description: Count of appointments cancelled
+      no_of_completed_appointments:
+        type: BIGINT
+        description: Count of appointments successfully completed
+      placed_mrp:
+        type: BIGINT
+        description: Maximum retail price of items placed in orders
+      placed_discounted_mrp:
+        type: BIGINT
+        description: Discounted price of items placed in orders
+      placed_wallet_burn:
+        type: BIGINT
+        description: Wallet or credit amount used for placed orders
+      fulfilled_mrp:
+        type: BIGINT
+        description: Maximum retail price of items fulfilled or delivered
+      fulfilled_discounted_mrp:
+        type: BIGINT
+        description: Discounted price of items fulfilled or delivered
+      fulfilled_wallet_burn:
+        type: BIGINT
+        description: Wallet or credit amount used for fulfilled orders
+    sample_rows:
+    - dt: '2026-01-01'
+      freq: Day
+      customer_type: 60D Acquisition
+      loyalty_flag: '0'
+      cancel_reason_text: ''
+      doctor_type: GP
+      user_type_monthly: null
+      user_type: New
+      doctor_name: Preeti Bhardwaj
+      order_id: '665561414277652480'
+      customer_id: '54433511'
+      order_category: Paid
+      order_source: iOS_App
+      coupon_code: null
+      doctor_specialization: General Physician
+      consult_status: Consult New
+      pharma_status: null
+      diag_status: null
+      user_activity_segment: Never Ordered
+      pe_status: New
+      digi_flag: 0
+      completed_consult_orders: 0
+      total_consult_orders: 1
+      cancelled_consult_orders: 1
+      no_of_booked_appointments: 1
+      no_of_cancelled_appointments: 1
+      no_of_completed_appointments: 0
+      placed_mrp: 249
+      placed_discounted_mrp: 199
+      placed_wallet_burn: 0
+      fulfilled_mrp: 0
+      fulfilled_discounted_mrp: 0
+      fulfilled_wallet_burn: 0
+    - dt: '2026-01-03'
+      freq: Day
+      customer_type: 60D Acquisition
+      loyalty_flag: '0'
+      cancel_reason_text: ''
+      doctor_type: GP
+      user_type_monthly: null
+      user_type: New
+      doctor_name: Seena Mol
+      order_id: '666436063208763392'
+      customer_id: '37554850'
+      order_category: Paid
+      order_source: iOS_App
+      coupon_code: null
+      doctor_specialization: General Physician
+      consult_status: Consult Old
+      pharma_status: null
+      diag_status: null
+      user_activity_segment: Never Ordered
+      pe_status: Old
+      digi_flag: 0
+      completed_consult_orders: 0
+      total_consult_orders: 1
+      cancelled_consult_orders: 1
+      no_of_booked_appointments: 1
+      no_of_cancelled_appointments: 1
+      no_of_completed_appointments: 0
+      placed_mrp: 249
+      placed_discounted_mrp: 199
+      placed_wallet_burn: 0
+      fulfilled_mrp: 0
+      fulfilled_discounted_mrp: 0
+      fulfilled_wallet_burn: 0
+    - dt: '2026-01-01'
+      freq: Day
+      customer_type: 60D Acquisition
+      loyalty_flag: '0'
+      cancel_reason_text: ''
+      doctor_type: GP
+      user_type_monthly: null
+      user_type: New
+      doctor_name: Shafiullah Baig
+      order_id: '665777894516449280'
+      customer_id: '54377557'
+      order_category: FreeFollowup
+      order_source: Android_App
+      coupon_code: null
+      doctor_specialization: General Physician
+      consult_status: Consult Old
+      pharma_status: null
+      diag_status: null
+      user_activity_segment: Never Ordered
+      pe_status: Old
+      digi_flag: 0
+      completed_consult_orders: 0
+      total_consult_orders: 1
+      cancelled_consult_orders: 1
+      no_of_booked_appointments: 1
+      no_of_cancelled_appointments: 1
+      no_of_completed_appointments: 0
+      placed_mrp: 249
+      placed_discounted_mrp: 0
+      placed_wallet_burn: 0
+      fulfilled_mrp: 0
+      fulfilled_discounted_mrp: 0
+      fulfilled_wallet_burn: 0
+relationships: []

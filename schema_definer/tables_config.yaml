@@ -1,0 +1,24 @@
+# Configure which Hive tables to include in the generated schema.
+#
+# Update this file and then run:
+#   python -m schema_definer.generate_schema
+#
+# Each entry under `tables` should specify at least:
+#   - schema: Hive schema name
+#   - table:  table name within that schema
+#
+# Optional fields:
+#   - name:        logical name to use in the schema YAML (defaults to `table`)
+#   - description: override the auto-generated table description
+
+tables:
+  # - schema: data_model
+  #   table: doc_consult_orders
+
+  - schema: pre_analytics
+    table: doc_consult_metrics  
+
+    # Optional overrides:
+    # name: doc_consult_orders
+    # description: "Consultation orders from Hive data_model.doc_consult_orders."
+

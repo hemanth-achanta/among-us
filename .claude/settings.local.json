@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(for dir:*)",
+      "Bash(do)",
+      "Bash(touch \"/Users/hemanth.achanta/Documents/Claude POC/among-us/$dir/__init__.py\")",
+      "Bash(done)",
+      "Bash(chmod +x \"/Users/hemanth.achanta/Documents/Claude POC/among-us/run.sh\")",
+      "Bash(\"/Users/hemanth.achanta/Documents/Claude POC/among-us/.env\":*)",
+      "Bash(for f:*)",
+      "Bash(python3 -m py_compile \"$f\")",
+      "Bash(echo \"✅ $f\")",
+      "Bash(echo \"❌ $f FAILED\")"
+    ]
+  }
+}

@@ -1,0 +1,103 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Example schema definition file.
+#
+# Copy and adapt this file for your database.
+# Load it in streamlit_app.py by replacing _default_schema() with:
+#   SchemaLoader("schema.yaml")
+# ─────────────────────────────────────────────────────────────────────────────
+
+tables:
+
+  customers:
+    description: "One row per registered customer."
+    columns:
+      customer_id:
+        type: INTEGER
+        description: "Primary key, auto-increment."
+      name:
+        type: VARCHAR(255)
+        description: "Full name of the customer."
+      email:
+        type: VARCHAR(255)
+        description: "Email address (unique)."
+      country:
+        type: VARCHAR(100)
+        description: "Country of residence."
+      created_at:
+        type: TIMESTAMP
+        description: "Account creation timestamp (UTC)."
+    sample_rows:
+      - {customer_id: 1, name: "Alice Smith",   email: "alice@example.com", country: "US", created_at: "2023-01-15 09:00:00"}
+      - {customer_id: 2, name: "Bob Johnson",   email: "bob@example.com",   country: "UK", created_at: "2023-02-20 14:30:00"}
+      - {customer_id: 3, name: "Carla Rossi",   email: "carla@example.com", country: "IT", created_at: "2023-03-05 11:15:00"}
+
+  orders:
+    description: "One row per customer order."
+    columns:
+      order_id:
+        type: INTEGER
+        description: "Primary key."
+      customer_id:
+        type: INTEGER
+        description: "FK → customers.customer_id."
+      order_date:
+        type: DATE
+        description: "Date the order was placed."
+      total_amount:
+        type: NUMERIC(12,2)
+        description: "Total order value in USD."
+      status:
+        type: VARCHAR(50)
+        description: "One of: pending, shipped, delivered, cancelled."
+    sample_rows:
+      - {order_id: 101, customer_id: 1, order_date: "2024-01-10", total_amount: 150.00, status: "delivered"}
+      - {order_id: 102, customer_id: 2, order_date: "2024-01-12", total_amount:  75.50, status: "shipped"}
+      - {order_id: 103, customer_id: 1, order_date: "2024-02-01", total_amount: 220.00, status: "pending"}
+
+  order_items:
+    description: "Line items for each order."
+    columns:
+      item_id:
+        type: INTEGER
+        description: "Primary key."
+      order_id:
+        type: INTEGER
+        description: "FK → orders.order_id."
+      product_id:
+        type: INTEGER
+        description: "FK → products.product_id."
+      quantity:
+        type: INTEGER
+        description: "Number of units."
+      unit_price:
+        type: NUMERIC(10,2)
+        description: "Price per unit at time of order."
+    sample_rows:
+      - {item_id: 1, order_id: 101, product_id: 10, quantity: 2, unit_price: 50.00}
+      - {item_id: 2, order_id: 101, product_id: 20, quantity: 1, unit_price: 50.00}
+      - {item_id: 3, order_id: 102, product_id: 10, quantity: 1, unit_price: 75.50}
+
+  products:
+    description: "Product catalogue."
+    columns:
+      product_id:
+        type: INTEGER
+        description: "Primary key."
+      name:
+        type: VARCHAR(255)
+        description: "Product name."
+      category:
+        type: VARCHAR(100)
+        description: "Product category."
+      price:
+        type: NUMERIC(10,2)
+        description: "Current list price in USD."
+    sample_rows:
+      - {product_id: 10, name: "Widget Pro",    category: "Hardware", price:  75.50}
+      - {product_id: 20, name: "Analytics Kit", category: "Software", price: 199.00}
+      - {product_id: 30, name: "Data Cable",    category: "Hardware", price:  12.99}
+
+relationships:
+  - "orders.customer_id → customers.customer_id"
+  - "order_items.order_id → orders.order_id"
+  - "order_items.product_id → products.product_id"

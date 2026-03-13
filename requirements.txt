@@ -1,0 +1,32 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Analytics Assistant — Python dependencies
+# Install with:  pip install -r requirements.txt
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Core framework ────────────────────────────────────────────────────────────
+streamlit>=1.35.0
+
+# ── LLM ──────────────────────────────────────────────────────────────────────
+anthropic>=0.30.0
+
+# ── Database ──────────────────────────────────────────────────────────────────
+# Trino / Presto (primary — used by default via DATABASE_TYPE=trino)
+# ``presto-python-client`` provides the ``prestodb`` module imported in the code.
+presto-python-client>=0.8.4     # exposes `prestodb` package used by notebook/connector
+
+# SQLAlchemy stack (for PostgreSQL / MySQL / Snowflake)
+sqlalchemy>=2.0.0
+psycopg2-binary>=2.9.9          # PostgreSQL driver
+pymysql>=1.1.0                  # MySQL driver
+# snowflake-sqlalchemy>=1.6.0   # Uncomment for Snowflake support
+# snowflake-connector-python>=3.6.0
+
+# ── Data ─────────────────────────────────────────────────────────────────────
+pandas>=2.1.0
+
+# ── Config / environment ──────────────────────────────────────────────────────
+python-dotenv>=1.0.0
+pyyaml>=6.0.1
+
+# ── Optional structured logging ──────────────────────────────────────────────
+# structlog>=24.1.0             # Uncomment if you prefer structlog
