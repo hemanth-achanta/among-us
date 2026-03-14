@@ -83,6 +83,10 @@ class SubQueryPlan:
 
     id: int
     description: str
+    # Optional structured planning metadata for layered schemas
+    subject: str | None = None
+    preferred_layer: str | None = None
+    candidate_tables: list[str] | None = None
 
 
 @dataclass
@@ -149,6 +153,8 @@ class QueryOrchestrator:
         self._router = ModelRouter()
 
         self._schema_summary = schema_loader.format_summary_for_complexity()
+        self._layered_schema_summary = schema_loader.format_layered_summary()
+        self._schema_loader = schema_loader
         self._complexity_estimator = ComplexityEstimator(
             llm_client=llm_client,
             schema_summary=self._schema_summary,
@@ -243,6 +249,15 @@ class QueryOrchestrator:
                     iteration += 1
                     model = retry_mgr.current_model
 
+                    # If the planner suggested specific tables for this sub-query,
+                    # build a schema snippet limited to those tables to keep
+                    # prompts compact and layer-aware.
+                    schema_override: str | None = None
+                    if sub.candidate_tables:
+                        schema_override = self._schema_loader._format_tables_for_prompt(
+                            sub.candidate_tables
+                        )
+
                     step, execution, should_continue = self._run_single_iteration(
                         question=question,
                         model=model,
@@ -252,6 +267,7 @@ class QueryOrchestrator:
                         retry_mgr=retry_mgr,
                         progress_callback=progress_callback,
                         subquery_description=sub.description,
+                            schema_override=schema_override,
                     )
 
                     # Annotate step with planning metadata for debug display
@@ -381,9 +397,17 @@ class QueryOrchestrator:
         """
         import json
 
+        # Enrich the schema summary with a layered view so the planner
+        # can reason about raw / semi-processed / processed tables.
+        combined_schema_summary = (
+            f"{self._schema_summary}\n\n"
+            "Layered view (tables grouped by logical layer and subject):\n"
+            f"{self._layered_schema_summary}"
+        )
+
         messages, system = build_query_planning_messages(
             question=question,
-            schema_summary=self._schema_summary,
+            schema_summary=combined_schema_summary,
             max_queries=config.MAX_QUERIES_PER_QUESTION,
         )
 
@@ -406,7 +430,24 @@ class QueryOrchestrator:
                 desc = str(q.get("description", "")).strip()
                 if not desc:
                     continue
-                subqueries.append(SubQueryPlan(id=idx, description=desc))
+                subject = q.get("subject")
+                preferred_layer = q.get("preferred_layer")
+                candidate_tables = q.get("candidate_tables") or None
+                if isinstance(candidate_tables, list):
+                    candidate_tables = [str(t).strip() for t in candidate_tables if str(t).strip()]
+                    if not candidate_tables:
+                        candidate_tables = None
+                subqueries.append(
+                    SubQueryPlan(
+                        id=idx,
+                        description=desc,
+                        subject=str(subject).strip() or None if subject is not None else None,
+                        preferred_layer=str(preferred_layer).strip() or None
+                        if preferred_layer is not None
+                        else None,
+                        candidate_tables=candidate_tables,
+                    )
+                )
 
             if not subqueries:
                 requires_multi = False
@@ -495,6 +536,7 @@ class QueryOrchestrator:
         retry_mgr: RetryManager,
         progress_callback: Optional[Callable[[QueryStep], None]] = None,
         subquery_description: str | None = None,
+        schema_override: str | None = None,
     ) -> tuple[QueryStep, ExecutionResult | None, bool]:
         """
         Run one SQL generation → validation → execution cycle.
@@ -518,6 +560,7 @@ class QueryOrchestrator:
                 previous_queries=previous_queries,
                 chat_history=chat_history,
                 subquery_description=subquery_description,
+                schema_override=schema_override,
             )
         except Exception as exc:  # noqa: BLE001
             log.error("sql_generation_exception", error=str(exc), iteration=iteration)
@@ -565,12 +608,15 @@ class QueryOrchestrator:
                 RetryReason.LOW_CONFIDENCE,
                 f"confidence={gen_result.confidence:.2f}",
             ):
-                # Re-run with (possibly escalated) model
+                # Re-run with (possibly escalated) model; pass full context
                 try:
                     gen_result = self._sql_generator.generate(
                         question=question,
                         model=retry_mgr.current_model,
                         previous_queries=previous_queries,
+                        chat_history=chat_history,
+                        subquery_description=subquery_description,
+                        schema_override=schema_override,
                     )
                     model = retry_mgr.current_model
                 except Exception as exc:  # noqa: BLE001

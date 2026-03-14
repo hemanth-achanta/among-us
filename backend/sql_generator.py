@@ -75,6 +75,7 @@ class SQLGenerator:
         previous_queries: list[dict[str, Any]] | None = None,
         chat_history: list[dict[str, str]] | None = None,
         subquery_description: str | None = None,
+        schema_override: str | None = None,
     ) -> SQLGenerationResult:
         """
         Generate SQL for the given question using the specified model.
@@ -94,9 +95,11 @@ class SQLGenerator:
         ------
         LLMError: If the LLM call fails after retries.
         """
+        schema_for_prompt = schema_override or self._schema
+
         messages, system = build_sql_generation_messages(
             question=question,
-            schema=self._schema,
+            schema=schema_for_prompt,
             dialect=self._dialect,
             max_rows=self._max_rows,
             previous_queries=previous_queries,

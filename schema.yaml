@@ -1,6 +1,8 @@
 tables:
   hive.data_model.doc_consult_orders:
     description: Auto-generated from hive.data_model.doc_consult_orders.
+    layer: raw
+    subject: consultations
     columns:
       order_id:
         type: VARCHAR
@@ -324,6 +326,8 @@ tables:
       dt: '2026-02-16'
   hive.pre_analytics.doc_consult_metrics:
     description: Auto-generated from hive.pre_analytics.doc_consult_metrics.
+    layer: semi
+    subject: consultations
     columns:
       dt:
         type: DATE
@@ -530,6 +534,8 @@ tables:
       fulfilled_wallet_burn: 0
   hive.mstr_tables.doc_consult_session_attribution:
     description: Auto-generated from hive.mstr_tables.doc_consult_session_attribution.
+    layer: raw
+    subject: sessions
     columns:
       session_id:
         type: VARCHAR

@@ -274,7 +274,9 @@ QUERY_PLANNING_SYSTEM = """\
 You are an analytics planning assistant.
 Given a natural-language question and a database schema summary, decide whether
 the question can be answered with a single SQL query or if multiple distinct
-queries are required.
+queries are required. The schema summary may also describe logical layers for
+tables such as raw data, semi-processed aggregates, and processed
+dashboard-style metrics.
 
 Rules:
 1. Prefer a single query when it can answer the question clearly.
@@ -282,6 +284,10 @@ Rules:
    sub-part of the question (for example, overall totals vs. detailed breakdowns).
 3. You are NOT writing SQL here, only planning query intents in plain English.
 4. At most {max_queries} planned queries are allowed.
+5. When possible, choose the most appropriate logical layer:
+   - "processed" for high-level KPIs and dashboard-style questions.
+   - "semi" for cohort / segmentation / intermediate aggregates.
+   - "raw" for very detailed, record-level investigations.
 
 Output ONLY this JSON (no markdown fences):
 {{
@@ -289,7 +295,10 @@ Output ONLY this JSON (no markdown fences):
   "queries": [
     {{
       "id": 1,
-      "description": "Short description of what this query should compute"
+      "description": "Short description of what this query should compute",
+      "subject": "short domain label such as consultations or sessions",
+      "preferred_layer": "raw|semi|processed",
+      "candidate_tables": ["fully.qualified.table_name", "another.table"]
     }}
   ]
 }}

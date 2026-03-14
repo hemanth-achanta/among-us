@@ -96,6 +96,12 @@ _TABLE_REF_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# Extract CTE names from WITH clauses so they are treated as valid local tables
+_CTE_NAME_PATTERN = re.compile(
+    r"\bwith\s+([a-zA-Z_][\w]*)\s+as\s*\(",
+    re.IGNORECASE,
+)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Validator
@@ -149,10 +155,11 @@ class SQLValidator:
             return result
 
         cleaned = self._strip_comments(sql)
+        cte_names = self._extract_cte_names(cleaned)
 
         self._check_select_only(cleaned, result)
         self._check_forbidden_keywords(cleaned, result)
-        self._check_table_references(cleaned, result)
+        self._check_table_references(cleaned, result, cte_names)
 
         if result.is_valid:
             log.debug("sql_validation_passed", sql_snippet=sql[:100])
@@ -177,6 +184,14 @@ class SQLValidator:
         return sql
 
     @staticmethod
+    def _extract_cte_names(sql: str) -> set[str]:
+        """
+        Extract CTE names from a WITH clause so they can be treated as
+        valid table-like references during validation.
+        """
+        return {m.group(1).lower() for m in _CTE_NAME_PATTERN.finditer(sql)}
+
+    @staticmethod
     def _check_select_only(sql: str, result: ValidationResult) -> None:
         if not _VALID_START_PATTERN.match(sql.strip()):
             result.add_error(
@@ -195,7 +210,7 @@ class SQLValidator:
             )
 
     def _check_table_references(
-        self, sql: str, result: ValidationResult
+        self, sql: str, result: ValidationResult, cte_names: set[str]
     ) -> None:
         if not self._known_tables:
             # No schema loaded — skip check
@@ -218,8 +233,13 @@ class SQLValidator:
             if not re.match(r"^\w+$", table_part):
                 continue
 
+            # CTEs defined in WITH clauses are valid local tables
+            if table_part in cte_names:
+                continue
+
             if table_part and table_part not in self._known_tables:
                 result.add_error(
                     f"Query references unknown table '{raw_ref}'. "
-                    "Only tables defined in the schema are allowed."
+                    "Only tables defined in the schema (or CTEs in the same "
+                    "query) are allowed."
                 )

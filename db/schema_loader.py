@@ -131,6 +131,39 @@ class SchemaLoader:
             for tname, tdef in self._schema["tables"].items()
         }
 
+    # Layer / subject introspection ------------------------------------------------
+
+    def get_tables_by_layer(self, layer: str) -> list[str]:
+        """
+        Return all table names that belong to the given logical *layer*
+        (e.g. \"raw\", \"semi\", \"processed\").
+        """
+        target = layer.lower()
+        return [
+            tname
+            for tname, tdef in self._schema["tables"].items()
+            if str(tdef.get("layer", "")).lower() == target
+        ]
+
+    def get_tables_by_subject(self, subject: str) -> list[str]:
+        """
+        Return all table names for the given *subject* domain
+        (e.g. \"consultations\", \"sessions\").
+        """
+        target = subject.lower()
+        return [
+            tname
+            for tname, tdef in self._schema["tables"].items()
+            if str(tdef.get("subject", "")).lower() == target
+        ]
+
+    def get_table_metadata(self, table: str) -> dict[str, Any]:
+        """
+        Return the metadata dict for *table* including any custom fields
+        such as \"layer\", \"subject\", and \"granularity\".
+        """
+        return dict(self._schema["tables"].get(table, {}))
+
     def get_all_column_refs(self) -> set[str]:
         """
         Return a set of fully-qualified column references like ``orders.order_id``.
@@ -149,10 +182,58 @@ class SchemaLoader:
 
         Applies token-budget trimming automatically.
         """
+        return self._format_tables_for_prompt(list(self._schema["tables"].keys()))
+
+    def format_summary_for_complexity(self) -> str:
+        """
+        Return a very short schema summary (just table names + column names)
+        for the complexity-estimation prompt where token cost matters most.
+        """
+        lines: list[str] = ["Tables and columns:"]
+        for tname, tdef in self._schema["tables"].items():
+            cols = ", ".join(tdef["columns"].keys())
+            lines.append(f"  {tname}({cols})")
+        return "\n".join(lines)
+
+    def format_layered_summary(self) -> str:
+        """
+        Return a compact summary of tables grouped by logical layer and subject.
+        This is intended for planning prompts so the LLM can choose
+        appropriately between raw / semi-processed / processed tables.
+        """
+        by_layer: dict[str, list[str]] = {}
+        for tname, tdef in self._schema["tables"].items():
+            layer = str(tdef.get("layer", "unspecified")).lower()
+            by_layer.setdefault(layer, []).append(tname)
+
+        lines: list[str] = []
+        for layer, tables in sorted(by_layer.items()):
+            lines.append(f"Layer: {layer}")
+            for tname in sorted(tables):
+                tdef = self._schema["tables"][tname]
+                subject = tdef.get("subject", "unspecified")
+                desc = tdef.get("description", "")
+                lines.append(f"  - {tname}  (subject: {subject})")
+                if desc:
+                    lines.append(f"    {textwrap.shorten(desc, width=120, placeholder='…')}")
+            lines.append("")
+
+        return "\n".join(lines).strip()
+
+    # ── Internal helpers ──────────────────────────────────────────────────────
+
+    def _format_tables_for_prompt(self, table_names: list[str]) -> str:
+        """
+        Internal helper to format a subset of tables for prompts.
+        Applies the same token-budget trimming as ``format_for_prompt``.
+        """
         lines: list[str] = []
 
         # ── Tables ──────────────────────────────────────────────────────────
-        for table_name, table_def in self._schema["tables"].items():
+        for table_name in table_names:
+            table_def = self._schema["tables"].get(table_name)
+            if not table_def:
+                continue
             description = table_def.get("description", "")
             lines.append(f"\n### Table: {table_name}")
             if description:
@@ -196,17 +277,6 @@ class SchemaLoader:
             full_text = self._trim_to_budget(full_text, char_budget)
 
         return full_text
-
-    def format_summary_for_complexity(self) -> str:
-        """
-        Return a very short schema summary (just table names + column names)
-        for the complexity-estimation prompt where token cost matters most.
-        """
-        lines: list[str] = ["Tables and columns:"]
-        for tname, tdef in self._schema["tables"].items():
-            cols = ", ".join(tdef["columns"].keys())
-            lines.append(f"  {tname}({cols})")
-        return "\n".join(lines)
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
