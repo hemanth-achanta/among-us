@@ -25,8 +25,9 @@ from utils.logger import Timer, get_logger
 
 log = get_logger(__name__)
 
-# Max characters of the results table to include in the interpretation prompt
-_MAX_TABLE_CHARS = 3_000
+# Max characters of the results table to include in the interpretation prompt.
+# Sized to fit full query results (queries are already limited to 500 rows).
+_MAX_TABLE_CHARS = 150_000
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -79,6 +80,7 @@ class ResultInterpreter:
         dataframe: pd.DataFrame,
         model: str,
         chat_history: list[dict[str, str]] | None = None,
+        business_context: str = "",
     ) -> InterpretationResult:
         """
         Ask the LLM to explain the query results with analyst-grade depth.
@@ -98,6 +100,7 @@ class ResultInterpreter:
             row_count=row_count,
             chat_history=chat_history,
             result_stats=result_stats,
+            business_context=business_context,
         )
 
         log.info(
@@ -258,6 +261,7 @@ class ResultInterpreter:
         model: str,
         labels: list[str] | None = None,
         chat_history: list[dict[str, str]] | None = None,
+        business_context: str = "",
     ) -> InterpretationResult:
         """
         Interpret multiple result sets that together answer the user's question.
@@ -303,6 +307,7 @@ class ResultInterpreter:
             question=question,
             queries=queries_payload,
             chat_history=chat_history,
+            business_context=business_context,
         )
 
         log.info(

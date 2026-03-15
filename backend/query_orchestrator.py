@@ -53,6 +53,7 @@ from llm.prompt_templates import (
 )
 from utils.logger import Timer, get_logger
 from utils.conversation_logger import ConversationLogger
+from app.business_context import format_approved_for_prompt
 
 log = get_logger(__name__)
 
@@ -235,6 +236,12 @@ class QueryOrchestrator:
                 chat_history=chat_history,
             )
 
+        # Load approved business context once per run
+        try:
+            business_context = format_approved_for_prompt()
+        except Exception:  # noqa: BLE001
+            business_context = ""
+
         with Timer() as total_timer:
 
             # ── 1. Complexity estimation ─────────────────────────────────────
@@ -317,6 +324,7 @@ class QueryOrchestrator:
                         last_failed_attempt=last_failed_attempt,
                         clog=clog,
                         status_callback=status_callback,
+                        business_context=business_context,
                     )
 
                     # Annotate step with planning metadata for debug display
@@ -423,6 +431,7 @@ class QueryOrchestrator:
                         dataframe=final_execution.dataframe,
                         model=final_model,
                         chat_history=chat_history,
+                        business_context=business_context,
                     )
                     rows_returned = final_execution.row_count
                     final_sql = final_execution.sql_executed
@@ -441,6 +450,7 @@ class QueryOrchestrator:
                         model=final_model,
                         labels=labels,
                         chat_history=chat_history,
+                        business_context=business_context,
                     )
                     # For summary metrics, report the rows from the last execution.
                     final_execution = executed_results[-1]
@@ -710,6 +720,7 @@ class QueryOrchestrator:
         last_failed_attempt: dict[str, str] | None = None,
         clog: ConversationLogger | None = None,
         status_callback: Optional[Callable[[str], None]] = None,
+        business_context: str = "",
     ) -> tuple[QueryStep, ExecutionResult | None, bool]:
         """
         Run one SQL generation → validation → execution cycle.
@@ -735,6 +746,7 @@ class QueryOrchestrator:
                 subquery_description=subquery_description,
                 schema_override=schema_override,
                 last_failed_attempt=last_failed_attempt,
+                business_context=business_context,
             )
         except Exception as exc:  # noqa: BLE001
             log.error("sql_generation_exception", error=str(exc), iteration=iteration)
@@ -823,6 +835,7 @@ class QueryOrchestrator:
                         subquery_description=subquery_description,
                         schema_override=schema_override,
                         last_failed_attempt=last_failed_attempt,
+                        business_context=business_context,
                     )
                     model = retry_mgr.current_model
                     if clog:

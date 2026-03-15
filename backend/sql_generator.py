@@ -82,6 +82,7 @@ class SQLGenerator:
         subquery_description: str | None = None,
         schema_override: str | None = None,
         last_failed_attempt: dict[str, str] | None = None,
+        business_context: str = "",
     ) -> SQLGenerationResult:
         """
         Generate SQL for the given question using the specified model.
@@ -112,6 +113,7 @@ class SQLGenerator:
             chat_history=chat_history,
             subquery_description=subquery_description,
             last_failed_attempt=last_failed_attempt,
+            business_context=business_context,
         )
 
         log.info(

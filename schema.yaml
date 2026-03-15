@@ -1,169 +1,279 @@
 tables:
   hive.data_model.doc_consult_orders:
-    description: Auto-generated from hive.data_model.doc_consult_orders.
+    description: Raw order-level data for consultation orders. Created daily from OMS snapshots
+      and enriched with customer cohort attributes (registration status, loyalty, pharma/diag
+      history, user activity segments). Used as the primary source for order-level analysis,
+      RCA investigations, cross-sell analysis (pharma/diag), and detailed cancellation analysis.
+      Contains both placed and fulfilled pricing metrics, doctor/patient demographics, and
+      consultation slot details.
+      Business rule (order_created_flag). If order_created_flag = '1' is not present for an
+      order, that order is one for which payment was never triggered. By default, exclude
+      such orders from all analyses (i.e. filter to order_created_flag = '1'). Only include
+      them when the user explicitly asks to include pre-payment orders or to remove that filter.
     layer: raw
     subject: consultations
     columns:
       order_id:
         type: VARCHAR
-        description: Unique identifier for the consultation order
+        description: Unique identifier for the consultation order. Used as primary key for
+          joins with metrics table and session attribution (via comma-separated order_ids).
+          Referenced in cross-sell analysis to link consultations with subsequent pharma/diag
+          orders.
       parent_id:
         type: INTEGER
-        description: Parent order identifier linking to the main transaction
+        description: Parent order identifier linking to the main transaction. Used in base_query.sql
+          to join with parent_order_price_snapshot for child order status determination.
       order_placed_at:
         type: TIMESTAMP(3)
-        description: Timestamp when the consultation order was placed
+        description: Timestamp when the consultation order was placed. Used in cross-sell
+          analysis to identify pharma orders placed after consultation (within 2 days of slot_end_time).
+          Filtered in daily mailer reports for time-based aggregations.
       order_placed_date:
         type: DATE
-        description: Date when the consultation order was placed
+        description: Date when the consultation order was placed. Used for date-based filtering
+          and aggregations in dashboards. Joined with fod_lod_growth_cohort on snapshot_month
+          for customer type classification.
       customer_id:
         type: VARCHAR
-        description: Unique identifier for the customer placing the order
+        description: Unique identifier for the customer placing the order. Primary join key
+          for customer segmentation tables (clevertap_user_properties_oms, fod_lod_growth_cohort).
+          Used in cross-sell analysis to link consultations with subsequent pharma orders.
+          Filtered for cohort analysis (New vs Old users, activity segments).
       order_source:
         type: VARCHAR
         description: Channel through which the order was placed (e.g., Mobile_Website,
-          Android_App)
+          Android_App, iOS_App, Website). Mapped from origin_platform in base_query.sql.
+          Used in funnel reports and dashboards for channel breakdowns. Aggregated in
+          metrics table for multi-dimensional analysis.
       attributes_vertical:
         type: VARCHAR
-        description: Product vertical for the order (e.g., CONSULTATION)
+        description: Product vertical for the order, always 'CONSULTATION' for this table.
+          Used as filter in base_query.sql to extract consultation orders from parent_order_snapshot.
       order_status:
         type: VARCHAR
-        description: Current status of the order (e.g., COMPLETED, CANCELLED)
+        description: Current status of the order (e.g., COMPLETED, CANCELLED). Used in
+          metrics aggregation to count completed_consult_orders vs cancelled_consult_orders.
+          Filtered in RCA analysis and cross-sell queries (typically where order_status = 'COMPLETED').
+          Critical for calculating conversion rates and fulfillment metrics.
       delivered_date:
         type: DATE
-        description: Date when the consultation was completed or delivered
+        description: Date when the consultation was completed or delivered. Derived from
+          CHILD_ORDER_COMPLETED snapshot in base_query.sql. Used in cross-sell analysis to
+          identify time window for subsequent pharma orders (within 2 days of delivery).
+          NULL for cancelled orders.
       placed_mrp:
         type: DOUBLE
-        description: Maximum retail price at the time of order placement
+        description: Maximum retail price at the time of order placement. Aggregated as
+          SUM(placed_mrp) in metrics table and dashboards. Used in daily mailer reports
+          for revenue analysis. Filtered in cross-sell analysis (excluding free/followup orders).
       placed_discounted_mrp:
         type: DOUBLE
-        description: Discounted price charged to customer at order placement
+        description: Discounted price charged to customer at order placement. Used to
+          classify order_category (Free when = 0, Paid when > 0). Aggregated in metrics
+          for revenue analysis. Critical for understanding pricing and discount impact.
       fulfilled_mrp:
         type: DOUBLE
-        description: Maximum retail price for the fulfilled portion of the order
+        description: Maximum retail price for the fulfilled portion of the order. Only
+          populated when delivered_date is not null. Aggregated in metrics table for
+          fulfillment revenue analysis. Used in cross-sell pharma analysis to calculate
+          consultation value.
       fulfilled_discounted_mrp:
         type: DOUBLE
-        description: Discounted price for the fulfilled portion of the order
+        description: Discounted price for the fulfilled portion of the order. Aggregated
+          in metrics and dashboards. Used alongside fulfilled_mrp for revenue reconciliation.
       placed_wallet_burn:
         type: DOUBLE
-        description: Wallet amount deducted at order placement
+        description: Wallet amount deducted at order placement. Aggregated in metrics table
+          for payment method analysis. Used in daily mailer reports for financial metrics.
       placed_pld:
         type: DOUBLE
-        description: Platform loyalty discount applied at order placement
+        description: Platform loyalty discount applied at order placement. Derived from
+          parent_order_price_snapshot_discounts where type = 'ITEM_LEVEL'. Aggregated in
+          metrics for discount analysis.
       placed_coupon_burn:
         type: DOUBLE
-        description: Coupon discount applied at order placement
+        description: Coupon discount applied at order placement. Derived from discounts
+          where type = 'PROMOTIONAL'. Used in cross-sell analysis and daily mailer reports.
       fulfilled_wallet_burn:
         type: DOUBLE
-        description: Wallet amount actually deducted upon fulfillment
+        description: Wallet amount actually deducted upon fulfillment. Only populated
+          when delivered_date is not null. Aggregated in metrics for fulfillment payment
+          analysis.
       fulfilled_pld:
         type: DOUBLE
-        description: Platform loyalty discount actually applied upon fulfillment
+        description: Platform loyalty discount actually applied upon fulfillment. Aggregated
+          in metrics table.
       fulfilled_coupon_burn:
         type: DOUBLE
-        description: Coupon discount actually applied upon fulfillment
+        description: Coupon discount actually applied upon fulfillment. Aggregated in metrics
+          and daily mailer reports.
       total_cashback:
         type: DOUBLE
-        description: Total cashback earned on the order
+        description: Total cashback earned on the order. Aggregated in financial reports.
       cancel_reason_text:
         type: VARCHAR
-        description: Reason provided for order cancellation if applicable
+        description: Reason provided for order cancellation if applicable. Used in metrics
+          table as a dimension for cancellation analysis. Filtered in RCA queries to
+          understand cancellation patterns. Common values include 'Auto-Cancellation at TOMS',
+          'cancelled by user', 'Doctor cancelled'.
       canceled_at:
         type: TIMESTAMP(3)
-        description: Timestamp when the order was cancelled
+        description: Timestamp when the order was cancelled. Used in RCA analysis for
+          timing analysis of cancellations.
       slotid:
         type: VARCHAR
-        description: Unique identifier for the consultation time slot
+        description: Unique identifier for the consultation time slot. Used in cross-sell
+          analysis to link with appointment details. Referenced from commitments_appointmentdetail_slotid.
       slot_end_time:
         type: VARCHAR
-        description: End time of the scheduled consultation slot
+        description: End time of the scheduled consultation slot. Used in cross-sell
+          analysis to calculate time window for subsequent pharma orders (pharma orders
+          placed within 2 days of slot_end_time). Converted to IST timestamp in pharma
+          cross-sell queries.
       slot_start_time:
         type: VARCHAR
-        description: Start time of the scheduled consultation slot
+        description: Start time of the scheduled consultation slot. Used for slot timing
+          analysis and appointment scheduling insights.
       consultation_type:
         type: VARCHAR
-        description: Type of consultation (e.g., VIDEO, AUDIO)
+        description: Type of consultation (e.g., VIDEO, AUDIO). Used in daily mailer
+          reports for consultation type breakdowns. Referenced from commitments_appointmentdetail_consultationtype.
       doctor_id:
         type: VARCHAR
-        description: Unique identifier for the consulting doctor
+        description: Unique identifier for the consulting doctor. Joined with teleconsultation_oms
+          tables in base_query.sql. Used for doctor-level analysis and performance tracking.
       doctor_name:
         type: VARCHAR
-        description: Name of the consulting doctor
+        description: Name of the consulting doctor. Used as dimension in metrics table
+          and dashboards for doctor-level breakdowns. Referenced in email reports and
+          cross-sell analysis.
       doctor_type:
         type: VARCHAR
-        description: Classification of doctor (e.g., GP, Specialist)
+        description: Classification of doctor (e.g., GP, Specialist). Used extensively
+          in metrics table and dashboards for doctor type segmentation. Aggregated in
+          daily mailer reports and funnel analysis.
       doctor_specialization:
         type: VARCHAR
-        description: Medical specialization of the doctor
+        description: Medical specialization of the doctor. Used in metrics table and
+          dashboards for specialization-level analysis. Referenced in cross-sell pharma
+          analysis.
       patient_name:
         type: VARCHAR
-        description: Name of the patient (tokenized for privacy)
+        description: Name of the patient (tokenized for privacy). Referenced from
+          attributes_patient_name in base_query.sql. Used for patient-level analysis
+          where privacy allows.
       patient_gender:
         type: VARCHAR
-        description: Gender of the patient
+        description: Gender of the patient. Used in demographic analysis and patient
+          segmentation.
       patient_age:
         type: VARCHAR
-        description: Age of the patient
+        description: Age of the patient. Used in daily mailer reports for age-based
+          analysis. Referenced from teleconsultation_oms_order_group_orders_items.
       external_rx_id:
         type: VARCHAR
-        description: External prescription identifier from the consultation
+        description: External prescription identifier from the consultation. Critical
+          for cross-sell analysis - used to join with rx_snapshot_nrt and rx_item_details
+          to identify prescribed medications. Used in email reports to link consultations
+          with prescribed items for overlap analysis with purchased pharma orders.
       child_order_status:
         type: VARCHAR(500)
-        description: Status of child orders associated with the parent order
+        description: Status of child orders associated with the parent order. Derived
+          from parent_order_price_snapshot snapshot_type (e.g., CHILD_ORDER_COMPLETED,
+          CHILD_ORDER_CANCELLED). Used to determine order fulfillment status.
       order_created_flag:
         type: VARCHAR(500)
         description: Flag indicating whether order was successfully created in system
+          ('1' = created, '0' or missing = not created). When not '1', the order is one for
+          which payment was never triggered — exclude from analysis by default; only include
+          when the user explicitly asks to include them or remove the filter. Used to classify
+          order_category (Paid when = '1', Free when = '0' and placed_discounted_mrp = 0).
+          Critical for filtering valid orders in daily mailer and cross-sell analysis.
       coupon_code:
         type: VARCHAR(500)
-        description: Coupon code applied to the order if any
+        description: Coupon code applied to the order if any. Extracted from discount
+          attributes. Used in metrics table as dimension for coupon performance analysis.
+          Used to identify diag_x_consult_flag (when coupon_code LIKE 'CON%' and placed_discounted_mrp = 0).
       reg_month:
         type: VARCHAR(500)
-        description: Month when the customer registered
+        description: Month when the customer registered (truncated to month). Used to
+          classify reg_status (New if reg_month = order month, Old otherwise). Joined
+          with customer_segmentation_raw_data in base_query.sql.
       loyalty_status:
         type: VARCHAR(500)
-        description: Customer's enrollment status in loyalty program
+        description: Customer's enrollment status in loyalty program. Mapped from loyalty_enrolled
+          in clevertap_user_properties_oms. Used in metrics table and dashboards for
+          loyalty segment analysis.
       latest_order_city:
         type: VARCHAR(500)
-        description: City where the customer placed their latest order
+        description: City where the customer placed their latest order. Derived from
+          COALESCE(latest_placed_delivery_city, latest_fulfilled_diag_city) in base_query.sql.
+          Used for geographic analysis.
       reg_status:
         type: VARCHAR(500)
-        description: Registration status of the customer (e.g., Old, New)
+        description: Registration status of the customer (e.g., Old, New). Classified
+          based on reg_month vs order month. Used in metrics table and dashboards for
+          new vs existing customer analysis.
       pe_status:
         type: VARCHAR(500)
-        description: Patient engagement status
+        description: Patient engagement status (RNB, Old, New). Classified based on
+          registration date and first order dates. Used in metrics table for patient
+          lifecycle analysis.
       pharma_status:
         type: VARCHAR(500)
-        description: Customer's pharmacy purchase history status
+        description: Customer's pharmacy purchase history status (Pharma_New, Pharma_Old,
+          null). Classified based on first_pharma_month vs order month. Used in metrics
+          table for cross-sell analysis and customer segmentation.
       diag_status:
         type: VARCHAR(500)
-        description: Customer's diagnostics service usage status
+        description: Customer's diagnostics service usage status (Diag_New, Diag_Old,
+          null). Classified based on first_diag_month vs order month. Used in metrics
+          table for cross-sell analysis.
       consult_status:
         type: VARCHAR(500)
-        description: Customer's consultation service usage status
+        description: Customer's consultation service usage status (Consult New, Consult
+          Old). Classified based on first_consult_date vs order date. Used in metrics
+          table and dashboards for consultation customer lifecycle analysis.
       digi_flag:
         type: INTEGER
-        description: Flag indicating digital/online consultation (1=yes, 0=no)
+        description: Flag indicating digital/online consultation (1=yes, 0=no). Derived
+          from digi_dashboard table join in base_query.sql. Used in metrics table and
+          dashboards for digital vs non-digital consultation analysis.
       crosssold_status:
         type: VARCHAR(500)
-        description: Status of cross-selling attempts (e.g., New, Old)
+        description: Status of cross-selling attempts (e.g., New, Old). Classified
+          based on whether customer had previous pharma or diag orders. Used in cross-sell
+          analysis.
       user_activity_segment:
         type: VARCHAR(500)
-        description: Customer activity segment classification
+        description: Customer activity segment classification (e.g., Active, Dormant_60_90_days,
+          Dormant_181_365_days, Churned_>365_days, Never Ordered). Classified based
+          on last_order_date relative to order date. Used in metrics table and dashboards
+          for churn and retention analysis.
       month:
         type: INTEGER
-        description: Month of the order placement
+        description: Month of the order placement (1-12). Used for monthly aggregations
+          and time-based analysis.
       week_start:
         type: DATE
-        description: Start date of the week containing the order
+        description: Start date of the week containing the order. Calculated using date_sub
+          and dayofweek functions. Used for weekly aggregations in dashboards.
       isfreefollowupavailable:
         type: VARCHAR
-        description: Flag indicating if free follow-up consultation is available
+        description: Flag indicating if free follow-up consultation is available ('true',
+          'false'). Used in order_category classification (FreeFollowup when = 'true'
+          and pastconsultationorderid is not null). Referenced from child_order_snapshot
+          attributes JSON.
       pastconsultationorderid:
         type: VARCHAR
-        description: Order ID of previous consultation if applicable
+        description: Order ID of previous consultation if applicable. Used to identify
+          follow-up consultations. Critical for FreeFollowup order classification in
+          daily mailer reports.
       dt:
         type: DATE
-        description: Data load date or partition date
+        description: Data load date or partition date. Always filter on this column
+          for query performance. Used in all queries for date-based filtering (typically
+          dt >= date_sub(current_date, N) or dt >= trunc(add_months(current_date, -N), 'MM')).
     sample_rows:
     - order_id: '682106507122552832'
       parent_id: 36900596
@@ -218,220 +328,173 @@ tables:
       isfreefollowupavailable: 'true'
       pastconsultationorderid: ''
       dt: '2026-02-16'
-    - order_id: '682107391466385408'
-      parent_id: 36900634
-      order_placed_at: '2026-02-16 00:20:15.056'
-      order_placed_date: '2026-02-16'
-      customer_id: '50030311'
-      order_source: Mobile_Website
-      attributes_vertical: CONSULTATION
-      order_status: COMPLETED
-      delivered_date: '2026-02-16'
-      placed_mrp: 349.0
-      placed_discounted_mrp: 198.93
-      fulfilled_mrp: 349.0
-      fulfilled_discounted_mrp: 198.93
-      placed_wallet_burn: 0.0
-      placed_pld: 150.07
-      placed_coupon_burn: 0.0
-      fulfilled_wallet_burn: 0.0
-      fulfilled_pld: 150.07
-      fulfilled_coupon_burn: 0.0
-      total_cashback: 0.0
-      cancel_reason_text: None
-      canceled_at: null
-      slotid: 6962236430c6b40012471a32
-      slot_end_time: '2026-02-15 19:30:00'
-      slot_start_time: '2026-02-15 19:15:00'
-      consultation_type: VIDEO
-      doctor_id: '709241758'
-      doctor_name: Amogh Jawale
-      doctor_type: GP
-      doctor_specialization: General Physician
-      patient_name: token://A2/8087dda0-efdd-4a15-9701-53d8d2d97218
-      patient_gender: Female
-      patient_age: '25'
-      external_rx_id: 69921cf532533427a9819f9c
-      child_order_status: CHILD_ORDER_COMPLETED
-      order_created_flag: '1'
-      coupon_code: null
-      reg_month: '2025-05-01'
-      loyalty_status: Never Enrolled
-      latest_order_city: 'NULL'
-      reg_status: Old
-      pe_status: RNB
-      pharma_status: null
-      diag_status: null
-      consult_status: Consult New
-      digi_flag: 1
-      crosssold_status: New
-      user_activity_segment: Never Ordered
-      month: 2
-      week_start: '2026-02-13'
-      isfreefollowupavailable: 'true'
-      pastconsultationorderid: ''
-      dt: '2026-02-16'
-    - order_id: '682109157893320704'
-      parent_id: 36900711
-      order_placed_at: '2026-02-16 00:27:16.115'
-      order_placed_date: '2026-02-16'
-      customer_id: '3686513'
-      order_source: Android_App
-      attributes_vertical: CONSULTATION
-      order_status: COMPLETED
-      delivered_date: '2026-02-16'
-      placed_mrp: 349.0
-      placed_discounted_mrp: 188.98
-      fulfilled_mrp: 349.0
-      fulfilled_discounted_mrp: 188.98
-      placed_wallet_burn: 9.95
-      placed_pld: 150.07
-      placed_coupon_burn: 0.0
-      fulfilled_wallet_burn: 9.95
-      fulfilled_pld: 150.07
-      fulfilled_coupon_burn: 0.0
-      total_cashback: 0.0
-      cancel_reason_text: None
-      canceled_at: null
-      slotid: 697c9425e04c270012219431
-      slot_end_time: '2026-02-15 19:15:00'
-      slot_start_time: '2026-02-15 19:00:00'
-      consultation_type: AUDIO
-      doctor_id: '1007270632'
-      doctor_name: Pathan irshad Khan
-      doctor_type: GP
-      doctor_specialization: General Physician
-      patient_name: token://A2/daa0c9ff-3591-4596-969a-82e30451e765
-      patient_gender: Female
-      patient_age: '32'
-      external_rx_id: 699219d232533427a9819f89
-      child_order_status: CHILD_ORDER_COMPLETED
-      order_created_flag: '1'
-      coupon_code: null
-      reg_month: '2019-07-01'
-      loyalty_status: 'No'
-      latest_order_city: Mumbai
-      reg_status: Old
-      pe_status: Old
-      pharma_status: Pharma_Old
-      diag_status: null
-      consult_status: Consult New
-      digi_flag: 0
-      crosssold_status: Old
-      user_activity_segment: Dormant_181_365_days
-      month: 2
-      week_start: '2026-02-13'
-      isfreefollowupavailable: 'true'
-      pastconsultationorderid: ''
-      dt: '2026-02-16'
   hive.pre_analytics.doc_consult_metrics:
-    description: Auto-generated from hive.pre_analytics.doc_consult_metrics.
+    description: Pre-aggregated order-level metrics table with multi-dimensional breakdowns.
+      Created from doc_consult_orders with aggregations at Day, Week, and Month frequencies.
+      Contains pre-computed counts (completed/cancelled/total orders, appointments) and
+      revenue metrics (MRP, discounted MRP, wallet burn) aggregated by various dimensions
+      (doctor, customer type, order source, consultation status, etc.). Optimized for
+      dashboard queries and high-level reporting. Used for KPIs, trend analysis, and
+      cohort breakdowns without requiring real-time aggregations.
     layer: semi
     subject: consultations
     columns:
       dt:
         type: DATE
-        description: Date of the consultation metric record
+        description: Date of the consultation metric record. Can represent day, week start,
+          or month start depending on freq. Always filter on this column for query performance.
+          Used in all dashboard queries for time-based filtering.
       freq:
         type: VARCHAR
-        description: Frequency level of the data aggregation (e.g., Day, Week, Month)
+        description: Frequency level of the data aggregation ('Day', 'Week', 'Month').
+          Used to switch between daily, weekly, and monthly views in dashboards. Created
+          via UNION ALL in doc_consult.sql from same base data aggregated at different
+          time granularities.
       customer_type:
         type: VARCHAR
-        description: Customer acquisition cohort or lifecycle stage (e.g., 60D Acquisition)
+        description: Customer acquisition cohort or lifecycle stage (e.g., '60D Acquisition',
+          'Active', 'Dormant 60-120', 'Dormant 120-180', 'Dormant 180-360', 'Dormant 360+').
+          Derived from fod_lod_growth_cohort join in doc_consult.sql. Used for cohort
+          analysis and customer lifecycle reporting.
       loyalty_flag:
         type: VARCHAR
-        description: Indicator of whether customer has loyalty program membership
-          or status
+        description: Indicator of whether customer has loyalty program membership ('1'
+          = enrolled, '0' = not enrolled). Derived from con_ret_loyalty_base join. Used
+          in dashboards for loyalty segment analysis.
       cancel_reason_text:
         type: VARCHAR
-        description: Reason provided for consultation or appointment cancellation
+        description: Reason provided for consultation or appointment cancellation. Used
+          as dimension for cancellation analysis. Aggregated to understand cancellation
+          patterns and root causes.
       doctor_type:
         type: VARCHAR
-        description: Classification of doctor (e.g., GP, Specialist)
+        description: Classification of doctor (e.g., GP, Specialist). Used extensively
+          in dashboards for doctor type breakdowns. Aggregated metrics allow comparison
+          of performance across doctor types.
       user_type_monthly:
         type: VARCHAR(500)
-        description: User engagement classification based on monthly activity and
-          order fulfillment status
+        description: User engagement classification based on monthly activity and order
+          fulfillment status (e.g., 'Placed_but_not_fulfilled'). Derived from f_order_consumer
+          join in doc_consult.sql. Used for user engagement analysis.
       user_type:
         type: VARCHAR(500)
         description: User classification indicating whether customer is new or existing
+          ('New', 'Old'). Derived from fod_lod_growth_cohort join. Used in dashboards
+          for new vs existing customer analysis.
       doctor_name:
         type: VARCHAR
-        description: Name of the consulting doctor
+        description: Name of the consulting doctor. Used as dimension in dashboards for
+          doctor-level performance analysis. Allows drill-down to individual doctor metrics.
       order_id:
         type: VARCHAR
-        description: Unique identifier for the consultation order
+        description: Unique identifier for the consultation order. Maintains order-level
+          granularity in metrics table. Used to join back to doc_consult_orders for
+          detailed analysis. Enables order-level drill-down from aggregated dashboards.
       customer_id:
         type: VARCHAR
-        description: Unique identifier for the customer
+        description: Unique identifier for the customer. Used for customer-level analysis
+          and cohort tracking. Enables customer journey analysis across orders.
       order_category:
         type: VARCHAR
-        description: Type of consultation order (e.g., Free, Paid, FreeFollowup)
+        description: Type of consultation order ('Free', 'Paid', 'FreeFollowup'). Classified
+          based on order_created_flag and placed_discounted_mrp in doc_consult.sql. Used
+          in dashboards to understand order mix and revenue composition.
       order_source:
         type: VARCHAR
         description: Channel through which the order was placed (e.g., Mobile_Website,
-          App)
+          Android_App, iOS_App). Used in dashboards for channel performance analysis.
+          Aggregated metrics show conversion and revenue by channel.
       coupon_code:
         type: VARCHAR(500)
-        description: Promotional or discount code applied to the order
+        description: Promotional or discount code applied to the order. Used as dimension
+          for coupon performance analysis. Allows tracking of promotional campaign effectiveness.
       doctor_specialization:
         type: VARCHAR
-        description: Medical specialty of the consulting doctor
+        description: Medical specialty of the consulting doctor. Used in dashboards for
+          specialization-level analysis. Enables understanding of demand by medical
+          specialty.
       consult_status:
         type: VARCHAR(500)
-        description: Status of the consultation (e.g., Consult New, Consult Old)
+        description: Status of the consultation (e.g., 'Consult New', 'Consult Old').
+          Indicates whether this is customer's first consultation or repeat. Used for
+          customer lifecycle and retention analysis.
       pharma_status:
         type: VARCHAR(500)
         description: Status of pharmacy-related services associated with the consultation
+          ('Pharma_New', 'Pharma_Old', null). Used for cross-sell analysis to understand
+          consultation impact on pharma orders.
       diag_status:
         type: VARCHAR(500)
-        description: Status of diagnostic services associated with the consultation
+        description: Status of diagnostic services associated with the consultation ('Diag_New',
+          'Diag_Old', null). Used for cross-sell analysis to understand consultation
+          impact on diagnostic orders.
       user_activity_segment:
         type: VARCHAR(500)
-        description: Customer engagement segment based on activity level and churn
-          status
+        description: Customer engagement segment based on activity level and churn status
+          (e.g., 'Active', 'Dormant_60_90_days', 'Churned_>365_days'). Used for retention
+          and churn analysis in dashboards.
       pe_status:
         type: VARCHAR
-        description: Physical examination status (e.g., New, Old)
+        description: Physical examination status ('New', 'Old', 'RNB'). Used for patient
+          engagement analysis.
       digi_flag:
         type: INTEGER
         description: Binary indicator of whether the consultation was digital or online
+          (1=digital, 0=non-digital). Used in dashboards for digital vs traditional consultation
+          analysis.
       completed_consult_orders:
         type: BIGINT
-        description: Count of successfully completed consultation orders
+        description: Count of successfully completed consultation orders. Pre-aggregated
+          metric used in dashboards for completion rate calculations. Derived from COUNT(DISTINCT
+          CASE WHEN order_status = 'COMPLETED' THEN order_id END) in doc_consult.sql.
       total_consult_orders:
         type: BIGINT
-        description: Total number of consultation orders placed
+        description: Total number of consultation orders placed. Pre-aggregated metric
+          for order volume analysis. Used in dashboards for trend analysis and conversion
+          rate denominators.
       cancelled_consult_orders:
         type: BIGINT
-        description: Count of cancelled consultation orders
+        description: Count of cancelled consultation orders. Pre-aggregated metric for
+          cancellation analysis. Used in dashboards to understand cancellation rates
+          and patterns.
       no_of_booked_appointments:
         type: BIGINT
-        description: Total number of appointments booked
+        description: Total number of appointments booked. Pre-aggregated metric for appointment
+          volume. Derived from COUNT(DISTINCT CASE WHEN order_id IS NOT NULL THEN order_id
+          END) in doc_consult.sql.
       no_of_cancelled_appointments:
         type: BIGINT
-        description: Total number of appointments cancelled
+        description: Total number of appointments cancelled. Pre-aggregated metric for
+          cancellation tracking.
       no_of_completed_appointments:
         type: BIGINT
-        description: Total number of appointments completed
+        description: Total number of appointments completed. Pre-aggregated metric for
+          completion tracking. Typically equals completed_consult_orders.
       placed_mrp:
         type: BIGINT
-        description: Maximum retail price of consultations placed
+        description: Maximum retail price of consultations placed. Pre-aggregated revenue
+          metric (SUM of placed_mrp from orders). Used in dashboards for revenue analysis
+          and trend tracking.
       placed_discounted_mrp:
         type: BIGINT
-        description: Discounted price of consultations placed
+        description: Discounted price of consultations placed. Pre-aggregated revenue
+          metric. Used in dashboards to understand discount impact and net revenue.
       placed_wallet_burn:
         type: BIGINT
-        description: Wallet or credit amount used for consultations placed
+        description: Wallet or credit amount used for consultations placed. Pre-aggregated
+          payment method metric. Used in financial analysis to understand payment mix.
       fulfilled_mrp:
         type: BIGINT
-        description: Maximum retail price of consultations fulfilled
+        description: Maximum retail price of consultations fulfilled. Pre-aggregated
+          fulfillment revenue metric. Used in dashboards for fulfillment revenue analysis.
       fulfilled_discounted_mrp:
         type: BIGINT
-        description: Discounted price of consultations fulfilled
+        description: Discounted price of consultations fulfilled. Pre-aggregated fulfillment
+          revenue metric. Used for net fulfillment revenue analysis.
       fulfilled_wallet_burn:
         type: BIGINT
-        description: Wallet or credit amount used for consultations fulfilled
+        description: Wallet or credit amount used for consultations fulfilled. Pre-aggregated
+          fulfillment payment metric. Used in financial analysis.
     sample_rows:
     - dt: '2025-12-30'
       freq: Day
@@ -466,185 +529,188 @@ tables:
       fulfilled_mrp: 0
       fulfilled_discounted_mrp: 0
       fulfilled_wallet_burn: 0
-    - dt: '2025-12-30'
-      freq: Day
-      customer_type: 60D Acquisition
-      loyalty_flag: '0'
-      cancel_reason_text: ''
-      doctor_type: GP
-      user_type_monthly: Placed_but_not_fulfilled
-      user_type: New
-      doctor_name: Mohsin Husain
-      order_id: '664878937745887232'
-      customer_id: '52126145'
-      order_category: Free
-      order_source: Mobile_Website
-      coupon_code: CON-VL5B7634-2CB5E1
-      doctor_specialization: General Physician
-      consult_status: Consult Old
-      pharma_status: null
-      diag_status: null
-      user_activity_segment: Active
-      pe_status: Old
-      digi_flag: 1
-      completed_consult_orders: 0
-      total_consult_orders: 1
-      cancelled_consult_orders: 1
-      no_of_booked_appointments: 1
-      no_of_cancelled_appointments: 1
-      no_of_completed_appointments: 0
-      placed_mrp: 249
-      placed_discounted_mrp: 0
-      placed_wallet_burn: 0
-      fulfilled_mrp: 0
-      fulfilled_discounted_mrp: 0
-      fulfilled_wallet_burn: 0
-    - dt: '2026-01-03'
-      freq: Day
-      customer_type: 60D Acquisition
-      loyalty_flag: '0'
-      cancel_reason_text: ''
-      doctor_type: GP
-      user_type_monthly: null
-      user_type: New
-      doctor_name: Shafiullah Baig
-      order_id: '666444369071534080'
-      customer_id: '38455212'
-      order_category: Free
-      order_source: Mobile_Website
-      coupon_code: CON-VL2D22F0-69806F
-      doctor_specialization: General Physician
-      consult_status: Consult New
-      pharma_status: null
-      diag_status: Diag_Old
-      user_activity_segment: Churned_>365_days
-      pe_status: Old
-      digi_flag: 1
-      completed_consult_orders: 0
-      total_consult_orders: 1
-      cancelled_consult_orders: 1
-      no_of_booked_appointments: 1
-      no_of_cancelled_appointments: 1
-      no_of_completed_appointments: 0
-      placed_mrp: 249
-      placed_discounted_mrp: 0
-      placed_wallet_burn: 0
-      fulfilled_mrp: 0
-      fulfilled_discounted_mrp: 0
-      fulfilled_wallet_burn: 0
   hive.mstr_tables.doc_consult_session_attribution:
-    description: Auto-generated from hive.mstr_tables.doc_consult_session_attribution.
+    description: Session-level funnel and attribution data for consultation booking journeys.
+      Created daily from page load events, widget interactions, and order placement events.
+      Tracks user progression through consultation funnel steps (homepage, speciality selection,
+      doctor selection, patient info, slot selection, payment, order placement). Contains
+      comma-separated order_ids linking sessions to orders. Used for funnel analysis,
+      conversion optimization, traffic source analysis, widget performance tracking, and
+      session-to-order attribution. Critical for understanding user journey and identifying
+      conversion bottlenecks.
     layer: raw
     subject: sessions
     columns:
       session_id:
         type: VARCHAR
-        description: Unique identifier for each user session
+        description: Unique identifier for each user session. Primary key for session-level
+          analysis. Used to join with consult_start_update_session_level for customer_id
+          and digi_flag in RCA analysis. Referenced across funnel analysis queries.
       session_date:
         type: DATE
-        description: Date on which the session occurred
+        description: Date on which the session occurred. Used for date-based filtering
+          and aggregations. Always filter on dt (partition column) for performance, but
+          session_date provides the actual session date.
       session_start_ts:
         type: TIMESTAMP(3)
-        description: Timestamp marking the start of the session
+        description: Timestamp marking the start of the session. Used to calculate time_to_first_step
+          and time_to_order metrics. Referenced from consult_start_update_session_level.created_at.
       platform:
         type: VARCHAR
-        description: Device platform used for the session (e.g., android, ios, web)
+        description: Device platform used for the session (e.g., 'android', 'ios', 'web',
+          'mweb'). Mapped to order_source format in daily mailer (iOS_App, Android_App,
+          Mobile_Website, Website). Used extensively in funnel analysis for platform
+          breakdowns. Filtered in daily mailer sessions query (platform IN ('ios', 'android',
+          'mweb', 'web')).
       session_source:
         type: VARCHAR
-        description: Traffic source or channel through which the session originated
+        description: Traffic source or channel through which the session originated (e.g.,
+          'Organic', 'Paid', campaign names). Used in RCA analysis and funnel reports
+          for traffic source performance. Critical for marketing attribution analysis.
       first_source_page_name:
         type: VARCHAR
-        description: Name of the first page viewed in the session
+        description: Name of the first page viewed in the session (e.g., 'p_splash').
+          Used in daily mailer sessions query for landing page analysis. Derived from
+          page_load_snapshot_nrt or consult_start_update_session_level.landing_page_name.
       city:
         type: VARCHAR
-        description: City location of the user during the session
+        description: City location of the user during the session. Derived from selected_city
+          in session base or first_load_city from page loads. Used for geographic analysis
+          in funnel reports.
       pincode:
         type: VARCHAR
-        description: Postal code of the user's location
+        description: Postal code of the user's location. Derived from selected_pincode
+          in session base or first_load_pincode from page loads. Used for location-based
+          analysis.
       first_consult_page:
         type: VARCHAR
-        description: First consultation-related page accessed in the session
+        description: First consultation-related page accessed in the session (e.g., 'doc_consult_hp',
+          'speciality_selection_hp', 'doctor_selection_hp', 'patient_info_hp', 'slot_selection',
+          'payment_method'). Used in funnel analysis to understand entry points. Derived
+          from first page in funnel sequence.
       first_landing_from:
         type: VARCHAR
-        description: Referrer or source of the first landing page
+        description: Referrer or source of the first landing page. Used in RCA analysis
+          for traffic source attribution. Derived from source_page_name of first consult
+          page.
       reached_doc_consult_hp:
         type: INTEGER
-        description: Flag indicating if user reached the doctor consultation homepage
+        description: Flag indicating if user reached the doctor consultation homepage (1=yes,
+          0=no). First step in funnel. Used in funnel analysis to calculate drop-off
+          rates. Aggregated in RCA sheet for funnel step analysis.
       reached_speciality_selection_hp:
         type: INTEGER
-        description: Flag indicating if user reached the speciality selection page
+        description: Flag indicating if user reached the speciality selection page (1=yes,
+          0=no). Second step in funnel. Used in funnel analysis and RCA reports.
       reached_doctor_selection_hp:
         type: INTEGER
-        description: Flag indicating if user reached the doctor selection page
+        description: Flag indicating if user reached the doctor selection page (1=yes,
+          0=no). Third step in funnel. Used in funnel analysis and RCA reports.
       reached_patient_info_hp:
         type: INTEGER
-        description: Flag indicating if user reached the patient information page
+        description: Flag indicating if user reached the patient information page (1=yes,
+          0=no). Fourth step in funnel. Used in funnel analysis and RCA reports.
       reached_slot_selection:
         type: INTEGER
-        description: Flag indicating if user reached the appointment slot selection
-          page
+        description: Flag indicating if user reached the appointment slot selection page
+          (1=yes, 0=no). Fifth step in funnel. Used in funnel analysis and RCA reports.
+          Critical step before payment.
       reached_payment_method:
         type: INTEGER
-        description: Flag indicating if user reached the payment method selection
-          page
+        description: Flag indicating if user reached the payment method selection page
+          (1=yes, 0=no). Sixth step in funnel. Used in daily mailer sessions query to
+          count payment_sessions. Critical conversion step.
       reached_order_placed:
         type: INTEGER
-        description: Flag indicating if user completed and placed an order
+        description: Flag indicating if user completed and placed an order (1=yes, 0=no).
+          Final step in funnel. Derived from order placement events (c_placed_order_snapshot_nrt).
+          Used in daily mailer sessions query to count order_sessions. Critical for conversion
+          rate calculations.
       max_funnel_step:
         type: INTEGER
-        description: Highest step reached in the consultation booking funnel
+        description: Highest step reached in the consultation booking funnel (0-7, where
+          7 = order placed). Used in daily mailer sessions query to identify consult_sessions
+          (max_funnel_step > 0). Used in RCA analysis for funnel progression analysis.
+          Calculated as greatest of all reached_* flags.
       time_to_first_step:
         type: BIGINT
-        description: Time in milliseconds from session start to reaching the first
-          funnel step
+        description: Time in milliseconds from session start to reaching the first funnel
+          step. Used for engagement analysis. NULL if user never reached first step.
+          Calculated as unix_timestamp(first_funnel_ts) - unix_timestamp(session_start_ts).
       time_to_order:
         type: BIGINT
-        description: Time in milliseconds from session start to order placement
+        description: Time in milliseconds from session start to order placement. Used
+          for conversion time analysis. NULL if no order placed. Calculated as unix_timestamp(first_order_ts)
+          - unix_timestamp(session_start_ts).
       total_pageviews:
         type: INTEGER
-        description: Total number of pages viewed during the session
+        description: Total number of pages viewed during the session. Used for engagement
+          analysis. Derived from page_load_snapshot_nrt count.
       funnel_pageviews:
         type: INTEGER
-        description: Number of pages viewed within the consultation funnel
+        description: Number of pages viewed within the consultation funnel. Used for
+          funnel engagement analysis. Counts pages in funnel sequence (doc_consult_hp,
+          speciality_selection_hp, etc.).
       order_ids:
         type: VARCHAR
-        description: Comma-separated list of order IDs generated from the session
+        description: Comma-separated list of order IDs generated from the session. Critical
+          for joining with doc_consult_orders - requires CROSS JOIN UNNEST(SPLIT(order_ids,
+          ',')) or CONTAINS(SPLIT(order_ids, ','), order_id) pattern. Used in RCA analysis
+          to link sessions with orders. Derived from c_placed_order_snapshot_nrt events
+          aggregated by session.
       widget_source:
         type: VARCHAR
-        description: Source or type of widget that initiated the session
+        description: Source or type of widget that initiated the session (e.g., 'Doctor
+          by health concern', 'First Fold Strip', 'Tile', 'Primary Banner - New Users',
+          'Primary Banner - Old Users'). Identifies first clicked widget. Used in widget
+          performance analysis and attribution.
       viewed_health_concern:
         type: INTEGER
-        description: Count of health concern items viewed by the user
+        description: Count of health concern items viewed by the user. Used for widget
+          engagement analysis. Derived from i_element_viewed_snapshot_nrt for 'doc_consult_concerns'
+          element.
       clicked_health_concern:
         type: INTEGER
-        description: Count of health concern items clicked by the user
+        description: Count of health concern items clicked by the user. Used for widget
+          engagement and conversion analysis. Derived from element_clicked_snapshot_nrt.
       viewed_first_fold:
         type: INTEGER
-        description: Count of first-fold content items viewed by the user
+        description: Count of first-fold content items viewed by the user. Used for
+          widget engagement analysis. Derived from 'doc_con_hp_strip' element views.
       clicked_first_fold:
         type: INTEGER
-        description: Count of first-fold content items clicked by the user
+        description: Count of first-fold content items clicked by the user. Used for
+          widget conversion analysis.
       viewed_tile:
         type: INTEGER
-        description: Count of tile-based content items viewed by the user
+        description: Count of tile-based content items viewed by the user. Used for
+          widget engagement analysis. Derived from 'home_cards' with specific image_url.
       clicked_tile:
         type: INTEGER
-        description: Count of tile-based content items clicked by the user
+        description: Count of tile-based content items clicked by the user. Used for
+          widget conversion analysis.
       viewed_banner_new:
         type: INTEGER
-        description: Count of new banner designs viewed by the user
+        description: Count of new banner designs viewed by the user. Used for widget
+          engagement analysis. Derived from 'home_banners_primary' with item_id = '15031'.
       clicked_banner_new:
         type: INTEGER
-        description: Count of new banner designs clicked by the user
+        description: Count of new banner designs clicked by the user. Used for widget
+          conversion analysis.
       viewed_banner_old:
         type: INTEGER
-        description: Count of old banner designs viewed by the user
+        description: Count of old banner designs viewed by the user. Used for widget
+          engagement analysis. Derived from 'home_banners_primary' with item_id = '15030'.
       clicked_banner_old:
         type: INTEGER
-        description: Count of old banner designs clicked by the user
+        description: Count of old banner designs clicked by the user. Used for widget
+          conversion analysis.
       dt:
         type: DATE
-        description: Partition date for the table record
+        description: Partition date for the table record. Always filter on this column
+          for query performance. Used in all queries for date-based filtering (typically
+          dt >= date_sub(current_date, 3) or dt >= trunc(add_months(current_date, -N),
+          'MM')).
     sample_rows:
     - session_id: s_a_00038eb6000fd837_2129b062-0d01-4402-b8d3-e10e3627c54e
       session_date: '2025-07-31'
@@ -681,100 +747,110 @@ tables:
       viewed_banner_old: 0
       clicked_banner_old: 0
       dt: '2025-07-31'
-    - session_id: s_a_0060aeb30cb1e149_839e1094-c655-412f-b79f-6ad129415154
-      session_date: '2025-07-31'
-      session_start_ts: '2025-07-31 19:15:15.000'
-      platform: android
-      session_source: Organic
-      first_source_page_name: p_splash
-      city: Kota
-      pincode: '324002'
-      first_consult_page: null
-      first_landing_from: null
-      reached_doc_consult_hp: null
-      reached_speciality_selection_hp: null
-      reached_doctor_selection_hp: null
-      reached_patient_info_hp: null
-      reached_slot_selection: null
-      reached_payment_method: null
-      reached_order_placed: 0
-      max_funnel_step: 0
-      time_to_first_step: null
-      time_to_order: null
-      total_pageviews: null
-      funnel_pageviews: null
-      order_ids: null
-      widget_source: null
-      viewed_health_concern: 0
-      clicked_health_concern: 0
-      viewed_first_fold: 0
-      clicked_first_fold: 0
-      viewed_tile: 1
-      clicked_tile: 0
-      viewed_banner_new: 0
-      clicked_banner_new: 0
-      viewed_banner_old: 0
-      clicked_banner_old: 0
-      dt: '2025-07-31'
-    - session_id: s_a_009f818ad4cf0ada_22dcab8b-fe06-410f-94e1-4bf416968c38
-      session_date: '2025-07-31'
-      session_start_ts: '2025-07-31 23:57:21.000'
-      platform: android
-      session_source: Organic
-      first_source_page_name: p_splash
-      city: Mumbai
-      pincode: '400001'
-      first_consult_page: null
-      first_landing_from: null
-      reached_doc_consult_hp: null
-      reached_speciality_selection_hp: null
-      reached_doctor_selection_hp: null
-      reached_patient_info_hp: null
-      reached_slot_selection: null
-      reached_payment_method: null
-      reached_order_placed: 0
-      max_funnel_step: 0
-      time_to_first_step: null
-      time_to_order: null
-      total_pageviews: null
-      funnel_pageviews: null
-      order_ids: null
-      widget_source: null
-      viewed_health_concern: 0
-      clicked_health_concern: 0
-      viewed_first_fold: 0
-      clicked_first_fold: 0
-      viewed_tile: 0
-      clicked_tile: 0
-      viewed_banner_new: 0
-      clicked_banner_new: 0
-      viewed_banner_old: 0
-      clicked_banner_old: 0
-      dt: '2025-07-31'
 relationships:
   - from_table: hive.data_model.doc_consult_orders
     from_column: order_id
     to_table: hive.pre_analytics.doc_consult_metrics
     to_column: order_id
     type: one_to_one
-    description: Links raw order details to pre-aggregated order-level metrics
+    description: Links raw order details to pre-aggregated order-level metrics. Each order
+      in doc_consult_orders has a corresponding row in doc_consult_metrics (at Day frequency)
+      with pre-computed aggregations. Use metrics table for dashboard KPIs and aggregated
+      analysis, drill down to orders table for detailed investigation.
   - from_table: hive.data_model.doc_consult_orders
     from_column: customer_id
     to_table: hive.pre_analytics.doc_consult_metrics
     to_column: customer_id
-    description: Same customer across orders and metrics tables
-
+    type: many_to_many
+    description: Same customer can have multiple orders across both tables. Used for
+      customer-level analysis and cohort tracking. Join on customer_id and dt for customer
+      metrics over time.
+  - from_table: hive.mstr_tables.doc_consult_session_attribution
+    from_column: order_ids
+    to_table: hive.data_model.doc_consult_orders
+    to_column: order_id
+    type: many_to_many
+    description: Session attribution table contains comma-separated order_ids that link
+      to orders. A session can generate multiple orders, and an order can be associated
+      with multiple sessions (though typically one). Requires special join logic (CROSS
+      JOIN UNNEST(SPLIT(sa.order_ids, ',')) AS t(single_order_id)) then match single_order_id
+      = CAST(o.order_id AS VARCHAR), or use CONTAINS(SPLIT(sa.order_ids, ','), CAST(o.order_id
+      AS VARCHAR)) for filtering. Used for session-to-order attribution and funnel-to-conversion
+      analysis.
 
 join_notes: |
   Key join patterns for Presto/Trino:
-  1. Orders <-> Metrics: Direct JOIN on order_id. Both tables share order_id, customer_id, doctor_name, doctor_type, order_source, and dt.
+  
+  1. Orders <-> Metrics: Direct JOIN on order_id. Both tables share order_id, customer_id,
+     doctor_name, doctor_type, order_source, and dt. Metrics table is pre-aggregated
+     at order level with additional dimensions (freq, customer_type, loyalty_flag, etc.)
+     and pre-computed counts/revenue metrics. Use metrics for dashboards and aggregated
+     analysis, orders for detailed investigation.
+  
   2. Orders <-> Sessions: session_attribution.order_ids is COMMA-SEPARATED.
-     - To join: CROSS JOIN UNNEST(SPLIT(sa.order_ids, ',')) AS t(single_order_id) then match single_order_id = CAST(o.order_id AS VARCHAR)
+     - To join: CROSS JOIN UNNEST(SPLIT(sa.order_ids, ',')) AS t(single_order_id) then
+       match single_order_id = CAST(o.order_id AS VARCHAR)
      - Or for filtering: WHERE CONTAINS(SPLIT(sa.order_ids, ','), CAST(o.order_id AS VARCHAR))
+     - Or using array functions: WHERE ARRAY_CONTAINS(SPLIT(sa.order_ids, ','), CAST(o.order_id AS VARCHAR))
+     - Note: order_ids can be NULL if session didn't result in order placement
+  
   3. All tables share dt (DATE) as partition column. ALWAYS filter on dt for query performance.
+     Common patterns:
+     - dt >= date_sub(current_date, N) for last N days
+     - dt >= trunc(add_months(current_date, -N), 'MM') for last N months
+     - dt BETWEEN date1 AND date2 for date ranges
+  
   4. Table selection guide:
-     - hive.pre_analytics.doc_consult_metrics: Use for KPIs, aggregated counts (completed/cancelled/total orders, appointments), cohort metrics. Has pre-computed counts like completed_consult_orders, cancelled_consult_orders, total_consult_orders. Best for dashboards, trend analysis, and high-level breakdowns.
-     - hive.data_model.doc_consult_orders: Use for order-level deep dives, individual order investigation, detailed cancellation analysis (cancel_reason_text, canceled_at), pricing analysis (MRP, discounts, wallet, cashback), slot-level timing, patient demographics. Best for RCA and granular analysis.
-     - hive.mstr_tables.doc_consult_session_attribution: Use for funnel/conversion analysis, session-level engagement, traffic source analysis, platform breakdowns, widget performance, page interaction metrics (health concern, banner, tile clicks). Best for understanding user journey and conversion bottlenecks.
-  5. Common dimension columns across tables: doctor_type, doctor_name, doctor_specialization, order_source, customer_id, order_id, dt.
-  6. For RCA: Start with the metrics table to quantify the change, then drill into orders or sessions for root cause.
+     - hive.pre_analytics.doc_consult_metrics: Use for KPIs, aggregated counts (completed/cancelled/total
+       orders, appointments), cohort metrics, multi-dimensional breakdowns (doctor, customer
+       type, order source, etc.), trend analysis, and high-level reporting. Has pre-computed
+       counts like completed_consult_orders, cancelled_consult_orders, total_consult_orders.
+       Best for dashboards, executive reports, and performance monitoring. Supports Day/Week/Month
+       frequencies via freq column.
+     - hive.data_model.doc_consult_orders: Use for order-level deep dives, individual order
+       investigation, detailed cancellation analysis (cancel_reason_text, canceled_at),
+       pricing analysis (MRP, discounts, wallet, cashback), slot-level timing, patient
+       demographics, cross-sell analysis (pharma/diag orders after consultation), prescription
+       analysis (external_rx_id), and RCA investigations. Best for granular analysis, root
+       cause analysis, and detailed reporting.
+     - hive.mstr_tables.doc_consult_session_attribution: Use for funnel/conversion analysis,
+       session-level engagement, traffic source analysis, platform breakdowns, widget performance
+       (health concern, banner, tile clicks), conversion optimization, drop-off analysis,
+       and session-to-order attribution. Best for understanding user journey, identifying
+       conversion bottlenecks, marketing attribution, and UX optimization.
+  
+  5. Common dimension columns across tables: doctor_type, doctor_name, doctor_specialization,
+     order_source (mapped from platform in sessions), customer_id, order_id (in orders/metrics,
+     comma-separated in sessions), dt.
+  
+  6. For RCA: Start with the metrics table to quantify the change (e.g., drop in completed_consult_orders),
+     then drill into orders table for order-level details (cancel_reason_text, order_status,
+     pricing), or sessions table for funnel analysis (max_funnel_step, reached_* flags,
+     drop-off points).
+  
+  7. Cross-sell analysis pattern: Join doc_consult_orders with pharma/diag orders on customer_id
+     and time window (pharma order placed within 2 days of consultation slot_end_time).
+     Use external_rx_id to link with prescription details for prescribed vs purchased analysis.
+  
+  8. Performance tips:
+     - Always filter on dt partition column first
+     - Use metrics table for aggregated queries instead of aggregating orders table
+     - For session-to-order joins, consider filtering sessions with order_ids IS NOT NULL first
+     - Use appropriate frequency (freq) in metrics table to match your analysis granularity
+
+order_category_definition: |
+  order_category (Paid, Free, FreeFollowup, Cancelled_without_paying) is derived in doc_consult pipelines. Use this when filtering or grouping by order type.
+  
+  IMPORTANT - Free orders: When the user asks for "Free" orders (or "free consultations", "free orders", etc.), always include BOTH Free and FreeFollowup (i.e. use order_category IN ('Free', 'FreeFollowup')). Only treat Free and FreeFollowup separately when the user explicitly asks for one of them (e.g. "only Free follow-up" or "Free excluding follow-up").
+  
+  Definition (CASE expression):
+    WHEN order_created_flag = '1' THEN 'Paid'
+    WHEN placed_discounted_mrp = 0 AND pastconsultationorderid IS NOT NULL AND trim(pastconsultationorderid) <> '' THEN 'FreeFollowup'
+    WHEN placed_discounted_mrp = 0 THEN 'Free'
+    ELSE 'Cancelled_without_paying'
+  
+  Typical analysis cut: one row per order_id (ROW_NUMBER() OVER (PARTITION BY order_id ORDER BY delivered_date ASC) AS ranked, then WHERE ranked = 1), exclude Cancelled_without_paying (WHERE order_category <> 'Cancelled_without_paying'), and filter dt e.g. dt >= TRUNC(ADD_MONTHS(CURRENT_DATE, -1), 'MM').
+  
+  Group-by dimensions often used with order_category: dt, order_placed_date, cancel_reason_text, order_id, customer_id, order_status, doctor_name, doctor_type, order_created_flag, order_category, order_source, coupon_code, doctor_specialization, consult_status, pharma_status, diag_status, user_activity_segment, pe_status, digi_flag.
+  
+  Diag x Consult orders (on doc_consult_metrics): An order is a diag_x_consult order when coupon_code starts with 'CON' AND placed_discounted_mrp = 0. To identify or count diag x consult orders use: (doc_consult_metrics) WHERE coupon_code LIKE 'CON%' AND placed_discounted_mrp = 0; for distinct order_ids use SELECT DISTINCT order_id FROM ... WHERE coupon_code LIKE 'CON%' AND placed_discounted_mrp = 0 (or equivalent: Distinct(case(startsWith(coupon_code, 'CON') AND placed_discounted_mrp = 0, order_id))).

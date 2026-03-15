@@ -33,6 +33,11 @@ if str(_ROOT) not in sys.path:
 from config import config
 from config.config import validate_config
 from utils.logger import configure_logging, get_logger, Timer
+from app.business_context import (
+    add_suggestion,
+    get_approved_context,
+    format_approved_for_prompt,
+)
 
 # Optional: DeepAnalyze local report generation
 try:
@@ -189,6 +194,7 @@ def _render_sidebar() -> None:
     with st.sidebar:
         st.title(f"{config.APP_ICON} {config.APP_TITLE}")
         st.caption("LLM-powered Text-to-SQL analytics")
+
         st.divider()
 
         # ── Status ───────────────────────────────────────────────────────────
@@ -232,14 +238,21 @@ def _render_sidebar() -> None:
                 m.get("meta", {}).get("token_summary", {}).get("output_tokens", 0)
                 for m in st.session_state["messages"] if m["role"] == "assistant"
             )
-            total_cost = sum(
+            total_cost_usd = sum(
                 m.get("meta", {}).get("token_summary", {}).get("cost_usd", 0) or 0
                 for m in st.session_state["messages"] if m["role"] == "assistant"
             )
+            currency = getattr(config, "COST_DISPLAY_CURRENCY", "USD")
+            if currency == "INR":
+                rate = getattr(config, "USD_TO_INR", 92.0)
+                display_cost = total_cost_usd * rate
+                cost_label = f"₹{display_cost:,.2f}"
+            else:
+                cost_label = f"${total_cost_usd:.4f}"
             col1, col2, col3 = st.columns(3)
             col1.metric("Input",  f"{total_in:,}")
             col2.metric("Output", f"{total_out:,}")
-            col3.metric("API cost", f"${total_cost:.4f}")
+            col3.metric("API cost", cost_label)
 
         st.divider()
 
@@ -252,6 +265,33 @@ def _render_sidebar() -> None:
         if st.button("Clear chat history", use_container_width=True):
             st.session_state["messages"] = []
             st.rerun()
+
+        st.divider()
+
+        # ── Suggest business context ──────────────────────────────────────
+        st.subheader("Suggest Business Context")
+        st.caption(
+            "Share domain knowledge (e.g. metric definitions, business rules) "
+            "that helps the assistant answer better. An admin will review it."
+        )
+        ctx_text = st.text_area(
+            "Your suggestion",
+            key="ctx_suggestion_input",
+            height=80,
+            placeholder='e.g. "Free consultations" means order_category = \'Free\' …',
+        )
+        if st.button("Submit suggestion", use_container_width=True, key="submit_ctx"):
+            if ctx_text and ctx_text.strip():
+                add_suggestion(ctx_text.strip())
+                st.success("Submitted! An admin will review your suggestion.")
+            else:
+                st.warning("Please enter some context before submitting.")
+
+        approved = get_approved_context()
+        if approved:
+            with st.expander(f"Active business context ({len(approved)})", expanded=False):
+                for entry in approved:
+                    st.markdown(f"- {entry['text']}")
 
         # ── Conversation logs browser ─────────────────────────────────────
         if getattr(config, "CONVERSATION_LOG_ENABLED", False):
@@ -434,7 +474,16 @@ def _render_message(msg: dict) -> None:
                     tc2.metric("Output", f"{token_summary.get('output_tokens', 0):,}")
                     tc3.metric("Calls",  token_summary.get("llm_calls", 0))
                     cost = token_summary.get("cost_usd")
-                    tc4.metric("API cost", f"${cost:.4f}" if isinstance(cost, (int, float)) else "—")
+                    if isinstance(cost, (int, float)):
+                        currency = getattr(config, "COST_DISPLAY_CURRENCY", "USD")
+                        if currency == "INR":
+                            rate = getattr(config, "USD_TO_INR", 92.0)
+                            cost_label = f"₹{cost * rate:,.2f}"
+                        else:
+                            cost_label = f"${cost:.4f}"
+                        tc4.metric("API cost", cost_label)
+                    else:
+                        tc4.metric("API cost", "—")
 
                 st.caption(
                     f"Total duration: {meta.get('total_duration_ms', 0):.0f} ms"

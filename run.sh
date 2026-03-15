@@ -18,7 +18,8 @@ fi
 mkdir -p logs
 
 echo "Starting Analytics Assistant..."
-streamlit run app/streamlit_app.py \
+# Run from app/ so Streamlit finds app/pages/ (Admin Context Manager, etc.)
+cd app && streamlit run streamlit_app.py \
   --server.headless false \
   --server.port 8501 \
   --browser.gatherUsageStats false

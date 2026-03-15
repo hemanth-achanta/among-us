@@ -1,0 +1,75 @@
+{
+  "suggestions": [
+    {
+      "id": "cc68710f",
+      "text": "We are only intrested in the paid consults",
+      "submitted_by": "user",
+      "submitted_at": "2026-03-15T20:33:24.468566+00:00",
+      "status": "approved",
+      "reviewed_at": "2026-03-15T20:34:47.105638+00:00"
+    },
+    {
+      "id": "85f79104",
+      "text": "in the hive.data_model.doc_consult_orders we only consider order_created_flag = 1 orders. these are the orders for which the user has completed the payment for",
+      "submitted_by": "user",
+      "submitted_at": "2026-03-15T20:37:58.637341+00:00",
+      "status": "approved",
+      "reviewed_at": "2026-03-15T20:38:04.506761+00:00"
+    },
+    {
+      "id": "99478865",
+      "text": "Free consultations are where order_category = 'free' or 'freefollowup'",
+      "submitted_by": "user",
+      "submitted_at": "2026-03-15T20:48:48.114220+00:00",
+      "status": "approved",
+      "reviewed_at": "2026-03-15T20:48:52.499860+00:00"
+    },
+    {
+      "id": "6f681394",
+      "text": "To identify a diagxconsult order use this logic on doc_consult_metrics table : Distinct(case(startsWith([coupon_code], \"CON\") AND [placed_discounted_mrp] = 0, [order_id]))",
+      "submitted_by": "user",
+      "submitted_at": "2026-03-15T21:53:36.077355+00:00",
+      "status": "approved",
+      "reviewed_at": "2026-03-15T21:53:43.533790+00:00"
+    },
+    {
+      "id": "6346e105",
+      "text": "Free orders are free orders + free followup",
+      "submitted_by": "user",
+      "submitted_at": "2026-03-15T22:09:42.794282+00:00",
+      "status": "approved",
+      "reviewed_at": "2026-03-15T22:09:47.399443+00:00"
+    },
+    {
+      "id": "070a2920",
+      "text": "MOM - Month on Month\nWOW - Week over week",
+      "submitted_by": "user",
+      "submitted_at": "2026-03-15T23:00:55.769477+00:00",
+      "status": "approved",
+      "reviewed_at": "2026-03-15T23:12:40.935447+00:00"
+    }
+  ],
+  "approved": [
+    {
+      "id": "6f681394",
+      "text": "To identify a diagxconsult order use this logic on doc_consult_metrics table : Distinct(case(startsWith([coupon_code], \"CON\") AND [placed_discounted_mrp] = 0, [order_id]))",
+      "approved_at": "2026-03-15T21:53:43.533790+00:00",
+      "original_text": "To identify a diagxconsult order use this logic on doc_consult_metrics table : Distinct(case(startsWith([coupon_code], \"CON\") AND [placed_discounted_mrp] = 0, [order_id]))",
+      "submitted_by": "user"
+    },
+    {
+      "id": "6346e105",
+      "text": "Free orders are free orders + free followup",
+      "approved_at": "2026-03-15T22:09:47.399443+00:00",
+      "original_text": "Free orders are free orders + free followup",
+      "submitted_by": "user"
+    },
+    {
+      "id": "070a2920",
+      "text": "MOM - Month on Month\nWOW - Week over week",
+      "approved_at": "2026-03-15T23:12:40.935447+00:00",
+      "original_text": "MOM - Month on Month\nWOW - Week over week",
+      "submitted_by": "user"
+    }
+  ]
+}

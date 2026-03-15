@@ -103,6 +103,8 @@ Today is {today}.
 ## Schema
 {schema}
 
+{business_context}
+
 {conversation_history}
 
 ## User question
@@ -171,6 +173,8 @@ question (e.g., an unexpected spike or anomaly), briefly mention it.
 RESULT_INTERPRETATION_USER = """\
 {conversation_history}
 
+{business_context}
+
 ## Original question
 {question}
 
@@ -237,6 +241,7 @@ def build_sql_generation_messages(
     chat_history: list[dict[str, str]] | None = None,
     subquery_description: str | None = None,
     last_failed_attempt: dict[str, str] | None = None,
+    business_context: str = "",
 ) -> list[dict[str, str]]:
     """
     Assemble the messages list for a SQL generation call.
@@ -304,6 +309,7 @@ def build_sql_generation_messages(
         subquery_intent=subquery_intent_block,
         previous_context=previous_context,
         today=today_str,
+        business_context=business_context,
     )
 
     return [
@@ -318,6 +324,7 @@ def build_interpretation_messages(
     row_count: int,
     chat_history: list[dict[str, str]] | None = None,
     result_stats: str = "",
+    business_context: str = "",
 ) -> tuple[list[dict[str, str]], str]:
     """
     Assemble messages for result interpretation.
@@ -350,6 +357,7 @@ def build_interpretation_messages(
         conversation_history=conversation_history,
         result_stats=result_stats,
         today=today_str,
+        business_context=business_context,
     )
     return [{"role": "user", "content": user_content}], RESULT_INTERPRETATION_SYSTEM
 
@@ -454,6 +462,7 @@ def build_multi_interpretation_messages(
     question: str,
     queries: list[dict[str, str]],
     chat_history: list[dict[str, str]] | None = None,
+    business_context: str = "",
 ) -> tuple[list[dict[str, str]], str]:
     """
     Assemble messages for interpreting multiple query results at once.
@@ -480,6 +489,9 @@ def build_multi_interpretation_messages(
 
     parts: list[str] = []
     parts.append(conversation_history)
+    if business_context:
+        parts.append(business_context)
+        parts.append("")
     parts.append("## Original question")
     parts.append(question)
     parts.append("")

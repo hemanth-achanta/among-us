@@ -237,6 +237,11 @@ class SchemaLoader:
         if join_notes:
             lines.append("Join guidance:")
             lines.append(join_notes.strip())
+        order_cat = self._schema.get("order_category_definition", "")
+        if order_cat:
+            lines.append("")
+            lines.append("Order category definition:")
+            lines.append(order_cat.strip())
 
         return "\n".join(lines).strip()
 
@@ -331,6 +336,12 @@ class SchemaLoader:
             if guide_lines:
                 lines.append("\n### Table context")
                 lines.extend(guide_lines)
+
+        # ── Order category definition (for doc_consult Paid/Free/FreeFollowup) ─
+        order_cat = self._schema.get("order_category_definition", "")
+        if order_cat:
+            lines.append("\n### Order category definition")
+            lines.append(order_cat.strip())
 
         full_text = "\n".join(lines)
 

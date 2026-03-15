@@ -87,15 +87,28 @@ TOKEN_LIMITS: dict[str, int] = {
     HIGH_MODEL:   16_384,
 }
 
-# API cost: USD per 1M input tokens, USD per 1M output tokens (for debug cost display)
+# API cost: USD per 1M input tokens, USD per 1M output tokens (for cost display).
+# Source: https://www.anthropic.com/pricing and https://docs.anthropic.com/en/docs/about-claude/pricing
 # Keys are model identifiers; unknown models fall back to Sonnet pricing.
 MODEL_PRICING: dict[str, tuple[float, float]] = {
+    # Claude 3.5 Haiku (Oct 2024)
     "claude-3-5-haiku-20241022":        (0.80, 4.00),
+    # Claude Haiku 4.5
     "claude-haiku-4-5-20251001":        (1.00, 5.00),
+    # Claude 3.5 Sonnet (Oct 2024)
     "claude-3-5-sonnet-20241022":       (3.00, 15.00),
+    # Claude Sonnet 4.5 / 4.6
     "claude-sonnet-4-6":                (3.00, 15.00),
     "claude-sonnet-4-5-20250514":       (3.00, 15.00),
+    # Claude Opus 4.6
+    "claude-opus-4-6":                  (5.00, 25.00),
 }
+
+# Cost display: which currency to show in the UI. Set to "INR" or "USD" (env: COST_DISPLAY_CURRENCY).
+_cost_currency = os.getenv("COST_DISPLAY_CURRENCY", "INR").upper()
+COST_DISPLAY_CURRENCY: str = "INR" if _cost_currency == "INR" else "USD"
+# USD→INR rate used when COST_DISPLAY_CURRENCY is INR (env: USD_TO_INR; update periodically).
+USD_TO_INR: float = float(os.getenv("USD_TO_INR", "92.0"))
 
 # Max tokens included for schema context in a single prompt.
 # Must be large enough to fit all tables + relationships + join notes.
