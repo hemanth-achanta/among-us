@@ -17,6 +17,7 @@ survive reruns.
 """
 from __future__ import annotations
 
+import json
 import sys
 import traceback
 from pathlib import Path
@@ -31,7 +32,7 @@ if str(_ROOT) not in sys.path:
 
 from config import config
 from config.config import validate_config
-from utils.logger import configure_logging, get_logger
+from utils.logger import configure_logging, get_logger, Timer
 
 # Optional: DeepAnalyze local report generation
 try:
@@ -220,7 +221,7 @@ def _render_sidebar() -> None:
 
         st.divider()
 
-        # ── Token usage ──────────────────────────────────────────────────────
+        # ── Token usage and cost ─────────────────────────────────────────────
         if st.session_state["messages"]:
             st.subheader("Session token usage")
             total_in  = sum(
@@ -231,9 +232,14 @@ def _render_sidebar() -> None:
                 m.get("meta", {}).get("token_summary", {}).get("output_tokens", 0)
                 for m in st.session_state["messages"] if m["role"] == "assistant"
             )
-            col1, col2 = st.columns(2)
+            total_cost = sum(
+                m.get("meta", {}).get("token_summary", {}).get("cost_usd", 0) or 0
+                for m in st.session_state["messages"] if m["role"] == "assistant"
+            )
+            col1, col2, col3 = st.columns(3)
             col1.metric("Input",  f"{total_in:,}")
             col2.metric("Output", f"{total_out:,}")
+            col3.metric("API cost", f"${total_cost:.4f}")
 
         st.divider()
 
@@ -247,6 +253,37 @@ def _render_sidebar() -> None:
             st.session_state["messages"] = []
             st.rerun()
 
+        # ── Conversation logs browser ─────────────────────────────────────
+        if getattr(config, "CONVERSATION_LOG_ENABLED", False):
+            st.divider()
+            st.subheader("Conversation logs")
+            log_base = getattr(
+                config,
+                "CONVERSATION_LOG_DIR",
+                str(_ROOT / "logs" / "conversations"),
+            )
+            log_dir = Path(log_base)
+            if log_dir.exists():
+                log_files = sorted(log_dir.glob("*.json"), reverse=True)
+                if log_files:
+                    st.caption(f"{len(log_files)} conversation(s) logged")
+                    selected_log = st.selectbox(
+                        "Browse trace logs",
+                        options=log_files,
+                        format_func=lambda p: p.stem,
+                        key="log_browser",
+                    )
+                    if selected_log and st.button("Load trace", key="load_trace"):
+                        try:
+                            trace = json.loads(selected_log.read_text(encoding="utf-8"))
+                            st.session_state["_browsed_trace"] = trace
+                        except Exception as e:
+                            st.error(f"Failed to load: {e}")
+                else:
+                    st.caption("No conversation logs yet.")
+            else:
+                st.caption("Log directory not created yet.")
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Chat message rendering
@@ -255,9 +292,15 @@ def _render_sidebar() -> None:
 def _render_message(msg: dict) -> None:
     """Render a single chat message with optional debug panel."""
     with st.chat_message(msg["role"]):
+        meta = msg.get("meta")
+        # Show duration in seconds at the start for assistant answers (always visible, not just debug)
+        if msg["role"] == "assistant" and meta:
+            duration_ms = meta.get("end_to_end_ms") or meta.get("total_duration_ms")
+            if duration_ms is not None and duration_ms >= 0:
+                sec = duration_ms / 1000.0
+                st.caption(f"This took **{sec:.1f}** seconds.")
         st.markdown(msg["content"])
 
-        meta = msg.get("meta")
         if not meta or msg["role"] != "assistant":
             return
 
@@ -272,6 +315,34 @@ def _render_message(msg: dict) -> None:
                     "Complexity",
                     meta.get("complexity", "—").upper()
                     if meta.get("complexity") else "—",
+                )
+
+                # End-to-end timing (UI perspective)
+                end_to_end_ms = meta.get("end_to_end_ms")
+                pipeline_ms = meta.get("total_duration_ms")
+                if end_to_end_ms is not None:
+                    tcol1, tcol2 = st.columns(2)
+                    tcol1.metric("End-to-end (ms)", f"{end_to_end_ms:.0f}")
+                    if pipeline_ms is not None:
+                        tcol2.metric("Pipeline only (ms)", f"{pipeline_ms:.0f}")
+
+                # ── High-level pipeline flow ─────────────────────────────
+                st.subheader("Pipeline flow")
+                complexity = meta.get("complexity", "—")
+                iterations = meta.get("query_iterations", "—")
+                st.markdown(
+                    "- **1. Complexity estimation** → classify the question as "
+                    f"**{complexity.upper() if isinstance(complexity, str) else complexity}** and "
+                    "pick an initial model.\n"
+                    "- **2. Query planning** → decide if multiple queries are needed and plan one "
+                    "or more sub-queries with their target tables.\n"
+                    f"- **3. Iterative loop** → for up to **{iterations}** iteration(s), do:\n"
+                    "  - generate SQL with the LLM\n"
+                    "  - validate the SQL against the known schema\n"
+                    "  - execute the SQL on the database (with row caps)\n"
+                    "  - optionally retry with a stronger model or different query if needed.\n"
+                    "- **4. Result interpretation** → send the final SQL + result table back to the "
+                    "LLM to generate the natural-language answer you see above."
                 )
 
                 # ── Final SQL ────────────────────────────────────────────
@@ -295,6 +366,21 @@ def _render_message(msg: dict) -> None:
                 steps = meta.get("steps", [])
                 if steps:
                     st.subheader("Query steps")
+
+                    # Compact flow summary per iteration
+                    for step in steps:
+                        val_ok = not step.get("validation_errors")
+                        exec_err = step.get("execution_error")
+                        rows = step.get("rows_returned", 0)
+                        summary_line = (
+                            f"- **Iter {step['iteration']}** · model **{step['model_used']}** · "
+                            f"confidence **{step['confidence']:.0%}** · "
+                            f"validation: {'ok' if val_ok else 'errors'} · "
+                            f"execution: {'error' if exec_err else 'ok'} · rows: {rows}"
+                        )
+                        st.markdown(summary_line)
+
+                    # Detailed expandable view per step
                     for step in steps:
                         sub_desc = step.get("subquery_description") or ""
                         header_label = (
@@ -339,18 +425,69 @@ def _render_message(msg: dict) -> None:
                                 st.caption(f"Sub-query: {sub_desc}")
                             st.caption(f"Rows returned: {step.get('rows_returned', 0)}")
 
-                # ── Token summary ────────────────────────────────────────
+                # ── Token summary and cost ─────────────────────────────────
                 token_summary = meta.get("token_summary", {})
                 if token_summary:
                     st.subheader("Token usage (this question)")
-                    tc1, tc2, tc3 = st.columns(3)
+                    tc1, tc2, tc3, tc4 = st.columns(4)
                     tc1.metric("Input",  f"{token_summary.get('input_tokens',  0):,}")
                     tc2.metric("Output", f"{token_summary.get('output_tokens', 0):,}")
                     tc3.metric("Calls",  token_summary.get("llm_calls", 0))
+                    cost = token_summary.get("cost_usd")
+                    tc4.metric("API cost", f"${cost:.4f}" if isinstance(cost, (int, float)) else "—")
 
                 st.caption(
                     f"Total duration: {meta.get('total_duration_ms', 0):.0f} ms"
                 )
+
+                # ── Conversation trace log ──────────────────────────────
+                conv_id = meta.get("conversation_id")
+                if conv_id:
+                    st.divider()
+                    st.subheader("Conversation trace")
+                    st.code(f"ID: {conv_id}", language=None)
+
+                    log_base = getattr(
+                        config,
+                        "CONVERSATION_LOG_DIR",
+                        str(_ROOT / "logs" / "conversations"),
+                    )
+                    log_path = Path(log_base) / f"{conv_id}.json"
+                    if log_path.exists():
+                        with st.expander("View full conversation trace", expanded=False):
+                            try:
+                                trace_data = json.loads(log_path.read_text(encoding="utf-8"))
+
+                                # Summary
+                                st.markdown("**Trace summary**")
+                                final = trace_data.get("final_result", {})
+                                scol1, scol2, scol3 = st.columns(3)
+                                scol1.metric("Stages logged", trace_data.get("stage_count", 0))
+                                scol2.metric("Truncations", trace_data.get("truncation_count", 0))
+                                scol3.metric("Duration (ms)", f"{final.get('total_duration_ms', 0):.0f}")
+
+                                # Truncation alerts
+                                truncations = trace_data.get("truncation_events", [])
+                                if truncations:
+                                    st.markdown("**Truncation events** (data was cut short here)")
+                                    for trunc in truncations:
+                                        st.warning(
+                                            f"**{trunc['location']}**: "
+                                            f"{trunc['original_size']:,} → {trunc['truncated_size']:,} {trunc['unit']}  \n"
+                                            f"{trunc.get('detail', '')}"
+                                        )
+
+                                # Pipeline stages
+                                st.markdown("**Pipeline stages**")
+                                for stage_entry in trace_data.get("pipeline_stages", []):
+                                    stage_name = stage_entry.get("stage", "unknown")
+                                    with st.expander(f"📋 {stage_name}", expanded=False):
+                                        st.json(stage_entry)
+
+                            except Exception as trace_exc:
+                                st.error(f"Could not load trace: {trace_exc}")
+                    else:
+                        st.caption(f"Trace file: `{log_path}`")
 
         # ── Error display ─────────────────────────────────────────────────
         if meta.get("error"):
@@ -489,6 +626,49 @@ def main() -> None:
     # ── DeepAnalyze report (local vLLM) ────────────────────────────────────────
     _render_deepanalyze_report_section()
 
+    # ── Browsed trace viewer ──────────────────────────────────────────────────
+    browsed_trace = st.session_state.get("_browsed_trace")
+    if browsed_trace:
+        with st.expander(
+            f"📜 Browsed trace: {browsed_trace.get('conversation_id', 'unknown')}",
+            expanded=True,
+        ):
+            st.markdown(f"**Question:** {browsed_trace.get('question', '?')}")
+
+            final = browsed_trace.get("final_result", {})
+            bcol1, bcol2, bcol3, bcol4 = st.columns(4)
+            bcol1.metric("Rows", final.get("rows_returned", 0))
+            bcol2.metric("Iterations", final.get("query_iterations", 0))
+            bcol3.metric("Truncations", browsed_trace.get("truncation_count", 0))
+            bcol4.metric("Duration", f"{final.get('total_duration_ms', 0):.0f}ms")
+
+            truncations = browsed_trace.get("truncation_events", [])
+            if truncations:
+                st.markdown("### Truncation events")
+                for trunc in truncations:
+                    st.warning(
+                        f"**{trunc['location']}**: "
+                        f"{trunc['original_size']:,} → {trunc['truncated_size']:,} {trunc['unit']}  \n"
+                        f"{trunc.get('detail', '')}"
+                    )
+
+            st.markdown("### Pipeline stages")
+            for stage_entry in browsed_trace.get("pipeline_stages", []):
+                stage_name = stage_entry.get("stage", "unknown")
+                with st.expander(f"📋 {stage_name}", expanded=False):
+                    st.json(stage_entry)
+
+            st.markdown("### Final answer")
+            st.markdown(final.get("answer", "(no answer)"))
+
+            if final.get("sql_used"):
+                st.markdown("### SQL used")
+                st.code(final["sql_used"], language="sql")
+
+            if st.button("Close trace viewer", key="close_trace"):
+                st.session_state["_browsed_trace"] = None
+                st.rerun()
+
     # ── Input box ─────────────────────────────────────────────────────────────
     question = st.chat_input(
         placeholder="e.g. What were the top 5 products by revenue last month?",
@@ -546,25 +726,27 @@ def main() -> None:
 
                 try:
                     orchestrator = st.session_state["orchestrator"]
-                    try:
-                        # Preferred path: orchestrator that supports live progress.
-                        result = orchestrator.run(
-                            question,
-                            chat_history=chat_history,
-                            progress_callback=(
-                                _progress_callback if live_debug_placeholder else None
-                            ),
-                        )
-                    except TypeError as exc:
-                        # Backwards compatibility for older orchestrator instances
-                        # that do not accept a progress_callback argument.
-                        if "progress_callback" in str(exc):
+                    # Measure end-to-end time from question to final result.
+                    with Timer() as end_to_end_timer:
+                        try:
+                            # Preferred path: orchestrator that supports live progress.
                             result = orchestrator.run(
                                 question,
                                 chat_history=chat_history,
+                                progress_callback=(
+                                    _progress_callback if live_debug_placeholder else None
+                                ),
                             )
-                        else:
-                            raise
+                        except TypeError as exc:
+                            # Backwards compatibility for older orchestrator instances
+                            # that do not accept a progress_callback argument.
+                            if "progress_callback" in str(exc):
+                                result = orchestrator.run(
+                                    question,
+                                    chat_history=chat_history,
+                                )
+                            else:
+                                raise
 
                     # Build meta dict for the rendered message
                     meta = {
@@ -573,6 +755,9 @@ def main() -> None:
                         "model_used":       result.model_used,
                         "complexity":       result.complexity.value,
                         "query_iterations": result.query_iterations,
+                         # End-to-end latency as seen from the UI
+                        "end_to_end_ms":    getattr(end_to_end_timer, "elapsed_ms", result.total_duration_ms),
+                        "conversation_id":  getattr(result, "conversation_id", None),
                         # Use getattr for backwards compatibility while the app reloads.
                         "interpretation_prompt_system":   getattr(result, "interpretation_prompt_system", None),
                         "interpretation_prompt_messages": getattr(result, "interpretation_prompt_messages", None),

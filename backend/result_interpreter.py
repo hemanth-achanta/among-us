@@ -42,6 +42,16 @@ class InterpretationResult:
     duration_ms:     float
     prompt_system:   str
     prompt_messages: list[dict[str, str]]
+    raw_llm_content: str = ""
+    stop_reason:     str = "unknown"
+    output_truncated: bool = False
+    input_tokens:    int = 0
+    output_tokens:   int = 0
+    max_tokens_budget: int = 0
+    table_data_chars_original: int = 0
+    table_data_chars_sent:     int = 0
+    table_data_was_truncated:  bool = False
+    stats_chars_sent:          int = 0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -78,7 +88,7 @@ class ResultInterpreter:
         and aggregate context for richer interpretation.
         """
         row_count = len(dataframe)
-        results_table = self._format_table(dataframe)
+        results_table, table_meta = self._format_table_with_meta(dataframe)
         result_stats = self._compute_stats(dataframe)
 
         messages, system = build_interpretation_messages(
@@ -94,6 +104,9 @@ class ResultInterpreter:
             "interpretation_start",
             model=model,
             row_count=row_count,
+            table_chars_original=table_meta["original_chars"],
+            table_chars_sent=table_meta["sent_chars"],
+            table_truncated=table_meta["was_truncated"],
         )
 
         with Timer() as t:
@@ -109,12 +122,24 @@ class ResultInterpreter:
             duration_ms=t.elapsed_ms,
             prompt_system=system,
             prompt_messages=messages,
+            raw_llm_content=response.content,
+            stop_reason=response.stop_reason,
+            output_truncated=response.output_truncated,
+            input_tokens=response.input_tokens,
+            output_tokens=response.output_tokens,
+            max_tokens_budget=response.max_tokens_budget,
+            table_data_chars_original=table_meta["original_chars"],
+            table_data_chars_sent=table_meta["sent_chars"],
+            table_data_was_truncated=table_meta["was_truncated"],
+            stats_chars_sent=len(result_stats),
         )
 
         log.info(
             "interpretation_complete",
             model=model,
             answer_length=len(result.answer),
+            stop_reason=response.stop_reason,
+            output_truncated=response.output_truncated,
             duration_ms=round(t.elapsed_ms, 1),
         )
 
@@ -157,21 +182,38 @@ class ResultInterpreter:
         Convert a DataFrame to a readable string, prioritising information
         density over raw row count to stay within token budget.
         """
+        text, _ = ResultInterpreter._format_table_with_meta(df)
+        return text
+
+    @staticmethod
+    def _format_table_with_meta(df: pd.DataFrame) -> tuple[str, dict]:
+        """
+        Like _format_table but also returns metadata about truncation.
+
+        Returns (formatted_text, {"original_chars", "sent_chars", "was_truncated"}).
+        """
         if df.empty:
-            return "(empty)"
+            return "(empty)", {"original_chars": 0, "sent_chars": 7, "was_truncated": False}
 
         try:
-            # For small results, show everything; for large, show top rows
             show_rows = min(len(df), 60)
             text = df.head(show_rows).to_string(index=False)
         except Exception:  # noqa: BLE001
             cols = ", ".join(df.columns.tolist())
             text = f"Columns: {cols}\n({len(df)} rows)"
 
-        if len(text) > _MAX_TABLE_CHARS:
+        original_chars = len(text)
+        was_truncated = original_chars > _MAX_TABLE_CHARS
+
+        if was_truncated:
             text = text[:_MAX_TABLE_CHARS] + "\n... [table truncated for context]"
 
-        return text
+        meta = {
+            "original_chars": original_chars,
+            "sent_chars": len(text),
+            "was_truncated": was_truncated,
+        }
+        return text, meta
 
     @staticmethod
     def _compute_stats(df: pd.DataFrame) -> str:
@@ -282,12 +324,20 @@ class ResultInterpreter:
             duration_ms=t.elapsed_ms,
             prompt_system=system,
             prompt_messages=messages,
+            raw_llm_content=response.content,
+            stop_reason=response.stop_reason,
+            output_truncated=response.output_truncated,
+            input_tokens=response.input_tokens,
+            output_tokens=response.output_tokens,
+            max_tokens_budget=response.max_tokens_budget,
         )
 
         log.info(
             "interpretation_multi_complete",
             model=model,
             answer_length=len(result.answer),
+            stop_reason=response.stop_reason,
+            output_truncated=response.output_truncated,
             duration_ms=round(t.elapsed_ms, 1),
             query_count=len(sql_list),
         )

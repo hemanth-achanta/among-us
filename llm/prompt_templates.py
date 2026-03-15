@@ -12,6 +12,7 @@ Design principles
 from __future__ import annotations
 
 from typing import Any
+from datetime import date
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -28,21 +29,34 @@ edge cases. You are the best analyst on the team.
 2. NEVER fabricate table names, column names, or enum values.
 3. Only SELECT statements. No DDL/DML (DROP, DELETE, UPDATE, INSERT, etc.).
 4. Always qualify columns with table alias when JOINs are present.
-5. Limit results to {max_rows} rows (use LIMIT).
-6. If the question is unanswerable with this schema, set "sql_query" to null.
+5. Push as much aggregation work as possible into the database: use GROUP BY, \
+   SUM, COUNT, AVG, MIN, MAX, etc. in SQL instead of fetching raw rows and \
+   computing aggregates client-side.
+6. Prefer using pre-aggregated/metric tables when they can answer the question \
+   directly; only fall back to raw detail tables when necessary for the user's \
+   question.
+7. Limit results to {max_rows} rows (use LIMIT).
+8. If the question is unanswerable with this schema, set "sql_query" to null.
+9. Use ONLY columns that appear under the table(s) you are querying in the \
+   Schema section below. Column names are table-specific: e.g. order_source \
+   exists on orders/metrics tables; the session table has session_source and \
+   platform (not order_source). If you see a "Previous attempt (failed)" block, \
+   fix the SQL using the error message and the schema.
 
 ## Analytical Mindset
-- For RCA ("why did X change?"): break the metric by dimensions (order_source, \
-doctor_type, customer_type, city, cancel_reason_text, etc.) to isolate the driver. \
-Compare periods side-by-side using CASE WHEN or self-joins.
+- For RCA ("why did X change?"): break the metric by dimensions that exist in \
+the schema for your chosen table(s): e.g. order_source and doctor_type on \
+orders/metrics; session_source and platform on session table. Compare periods \
+side-by-side using CASE WHEN or self-joins.
 - For trends: use DATE_TRUNC for time bucketing and compute rates/ratios.
 - For data dumps: select relevant columns, apply clear filters, sort meaningfully.
 - For funnel analysis: use session table's reached_* flags and compute step-to-step \
 drop-off rates.
 - Prefer pre-aggregated tables (metrics) for KPIs; use raw tables (orders) for \
 detail; use session tables for conversion analysis.
-- When multiple tables share the same dimension (e.g. order_source, doctor_type), \
-JOIN on the shared key rather than running separate queries.
+- When multiple tables share the same dimension (e.g. order_source on orders/metrics; \
+session_source on session table), JOIN on the shared key rather than running \
+separate queries.
 
 ## Presto/Trino Syntax Guide
 - Date literals: DATE '2026-01-01'
@@ -57,7 +71,10 @@ JOIN on the shared key rather than running separate queries.
 - Window: ROW_NUMBER() OVER (PARTITION BY ... ORDER BY ...)
 - ALWAYS filter on the dt partition column for performance.
 
-Output format (respond with ONLY this JSON, no markdown fences):
+Output format — CRITICAL: respond with ONLY one JSON object. No text before or \
+after it. No separate SQL code block: the SQL must appear ONLY inside the \
+"sql_query" value. Example:
+{{"sql_query": "SELECT ... FROM ... WHERE dt >= DATE '2026-01-01' LIMIT 100", "reasoning": "Brief explanation.", "confidence": 0.9}}
 {{
   "sql_query": "<valid SQL string or null>",
   "reasoning": "<brief explanation of your analytical approach and table choices>",
@@ -68,6 +85,9 @@ Output format (respond with ONLY this JSON, no markdown fences):
 SQL_GENERATION_USER = """\
 ## Database dialect
 {dialect}
+
+## Current date (for interpreting relative date phrases)
+Today is {today}.
 
 ## Schema
 {schema}
@@ -87,6 +107,20 @@ The following queries were already executed in this session.
 Use their results to inform your next query; do not repeat them.
 
 {previous_queries}
+"""
+
+_PREVIOUS_FAILED_BLOCK = """\
+## Previous attempt (failed — fix this)
+The following SQL was rejected by the database. Generate corrected SQL that \
+fixes the error. Use ONLY tables and columns from the Schema section above.
+
+SQL that failed:
+{sql}
+
+Error from database:
+{error}
+
+Respond with a new sql_query that fixes this error.
 """
 
 _CONVERSATION_HISTORY_BLOCK = """\
@@ -136,6 +170,10 @@ RESULT_INTERPRETATION_USER = """\
 {results_table}
 
 {result_stats}
+
+## Current date
+Today is {today}. Use this to interpret any relative date phrases in the \
+original question (e.g. "today", "yesterday", "last 7 days", "this month").
 
 Analyze the data above and answer the original question thoroughly. \
 Lead with the key finding, then support with specific numbers. \
@@ -187,17 +225,21 @@ def build_sql_generation_messages(
     previous_queries: list[dict[str, Any]] | None = None,
     chat_history: list[dict[str, str]] | None = None,
     subquery_description: str | None = None,
+    last_failed_attempt: dict[str, str] | None = None,
 ) -> list[dict[str, str]]:
     """
     Assemble the messages list for a SQL generation call.
 
     Parameters
     ----------
-    question:         Natural-language question from the user.
-    schema:           Formatted schema string (from SchemaLoader).
-    dialect:          SQL dialect name, e.g. "PostgreSQL", "MySQL", "Snowflake".
-    max_rows:         Row limit to inject into the system prompt.
-    previous_queries: Optional list of dicts with keys "sql" and "result_summary".
+    question:             Natural-language question from the user.
+    schema:               Formatted schema string (from SchemaLoader).
+    dialect:              SQL dialect name, e.g. "PostgreSQL", "MySQL", "Snowflake".
+    max_rows:             Row limit to inject into the system prompt.
+    previous_queries:     Optional list of dicts with keys "sql" and "result_summary".
+    last_failed_attempt: Optional dict with "sql" and "error" for error-fed retry
+                          (database or validation error). When set, the prompt
+                          asks the LLM to fix the SQL.
 
     Returns
     -------
@@ -213,6 +255,12 @@ def build_sql_generation_messages(
         previous_context = _PREVIOUS_CONTEXT_BLOCK.format(
             previous_queries="\n\n".join(lines)
         )
+    if last_failed_attempt:
+        failed_block = _PREVIOUS_FAILED_BLOCK.format(
+            sql=last_failed_attempt.get("sql", ""),
+            error=last_failed_attempt.get("error", ""),
+        )
+        previous_context = (previous_context + "\n\n" + failed_block) if previous_context else failed_block
 
     conversation_history = ""
     if chat_history:
@@ -235,6 +283,8 @@ def build_sql_generation_messages(
             f"{subquery_description}\n"
         )
 
+    today_str = date.today().isoformat()
+
     user_content = SQL_GENERATION_USER.format(
         dialect=dialect,
         schema=schema,
@@ -242,6 +292,7 @@ def build_sql_generation_messages(
         conversation_history=conversation_history,
         subquery_intent=subquery_intent_block,
         previous_context=previous_context,
+        today=today_str,
     )
 
     return [
@@ -278,6 +329,8 @@ def build_interpretation_messages(
                 history="\n".join(hist_lines)
             )
 
+    today_str = date.today().isoformat()
+
     user_content = RESULT_INTERPRETATION_USER.format(
         question=question,
         sql=sql,
@@ -285,6 +338,7 @@ def build_interpretation_messages(
         row_count=row_count,
         conversation_history=conversation_history,
         result_stats=result_stats,
+        today=today_str,
     )
     return [{"role": "user", "content": user_content}], RESULT_INTERPRETATION_SYSTEM
 

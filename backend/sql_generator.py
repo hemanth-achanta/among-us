@@ -36,6 +36,11 @@ class SQLGenerationResult:
     duration_ms:      float
     prompt_system:    str              # System prompt sent to the LLM
     prompt_messages:  list[dict[str, Any]]  # User/assistant messages sent to the LLM
+    stop_reason:      str = "unknown"  # "end_turn" = complete, "max_tokens" = truncated
+    output_truncated: bool = False
+    input_tokens:     int = 0
+    output_tokens:    int = 0
+    max_tokens_budget: int = 0
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -76,6 +81,7 @@ class SQLGenerator:
         chat_history: list[dict[str, str]] | None = None,
         subquery_description: str | None = None,
         schema_override: str | None = None,
+        last_failed_attempt: dict[str, str] | None = None,
     ) -> SQLGenerationResult:
         """
         Generate SQL for the given question using the specified model.
@@ -105,6 +111,7 @@ class SQLGenerator:
             previous_queries=previous_queries,
             chat_history=chat_history,
             subquery_description=subquery_description,
+            last_failed_attempt=last_failed_attempt,
         )
 
         log.info(
@@ -127,6 +134,11 @@ class SQLGenerator:
             duration_ms=t.elapsed_ms,
             prompt_system=system,
             prompt_messages=messages,
+            stop_reason=response.stop_reason,
+            output_truncated=response.output_truncated,
+            input_tokens=response.input_tokens,
+            output_tokens=response.output_tokens,
+            max_tokens_budget=response.max_tokens_budget,
         )
 
         log.info(
@@ -134,12 +146,34 @@ class SQLGenerator:
             model=model,
             confidence=result.confidence,
             sql_null=result.sql_query is None,
+            stop_reason=response.stop_reason,
+            output_truncated=response.output_truncated,
             duration_ms=round(t.elapsed_ms, 1),
         )
 
         return result
 
     # ── Response parsing ──────────────────────────────────────────────────────
+
+    # Regex to detect markdown SQL code block: ```sql ... ``` or ```\n...SELECT... ```
+    _SQL_BLOCK_RE = re.compile(
+        r"```(?:sql)?\s*\n?(.*?)```",
+        re.DOTALL | re.IGNORECASE,
+    )
+
+    @staticmethod
+    def _extract_sql_from_code_block(raw: str) -> str | None:
+        """
+        If the raw LLM response contains a markdown SQL code block (e.g. ```sql ... ```),
+        return the extracted SQL string; otherwise return None.
+        If multiple code blocks exist, returns the first whose content looks like SQL.
+        """
+        text = raw.strip()
+        for match in SQLGenerator._SQL_BLOCK_RE.finditer(text):
+            sql = match.group(1).strip()
+            if sql.upper().startswith(("SELECT", "WITH")):
+                return sql
+        return None
 
     @staticmethod
     def _parse_response(
@@ -148,6 +182,11 @@ class SQLGenerator:
         duration_ms: float,
         prompt_system: str,
         prompt_messages: list[dict[str, Any]],
+        stop_reason: str = "unknown",
+        output_truncated: bool = False,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        max_tokens_budget: int = 0,
     ) -> SQLGenerationResult:
         """
         Parse the LLM response into a :class:`SQLGenerationResult`.
@@ -173,9 +212,36 @@ class SQLGenerator:
             if brace_match:
                 text = brace_match.group(0)
 
+        llm_metadata = dict(
+            stop_reason=stop_reason,
+            output_truncated=output_truncated,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            max_tokens_budget=max_tokens_budget,
+        )
+
         try:
             parsed = json.loads(text)
         except json.JSONDecodeError as exc:
+            # Fallback: try to extract SQL from a markdown code block (e.g. ```sql ... ```)
+            fallback = SQLGenerator._extract_sql_from_code_block(raw)
+            if fallback is not None:
+                log.warning(
+                    "sql_generation_parse_fallback",
+                    error=str(exc),
+                    message="Extracted SQL from code block (LLM did not return valid JSON)",
+                )
+                return SQLGenerationResult(
+                    sql_query=fallback,
+                    reasoning="Extracted from code block (LLM did not return valid JSON).",
+                    confidence=0.7,
+                    model_used=model,
+                    raw_content=raw,
+                    duration_ms=duration_ms,
+                    prompt_system=prompt_system,
+                    prompt_messages=prompt_messages,
+                    **llm_metadata,
+                )
             log.warning(
                 "sql_generation_parse_error",
                 error=str(exc),
@@ -190,6 +256,7 @@ class SQLGenerator:
                 duration_ms=duration_ms,
                 prompt_system=prompt_system,
                 prompt_messages=prompt_messages,
+                **llm_metadata,
             )
 
         sql_query  = parsed.get("sql_query")
@@ -200,6 +267,26 @@ class SQLGenerator:
         if isinstance(sql_query, str) and sql_query.strip().lower() in ("null", "none", ""):
             sql_query = None
 
+        # If JSON had no valid SQL but raw response has a ```sql ... ``` block, use it
+        if sql_query is None:
+            fallback = SQLGenerator._extract_sql_from_code_block(raw)
+            if fallback is not None:
+                log.warning(
+                    "sql_generation_parse_fallback",
+                    message="Extracted SQL from code block (LLM did not return valid JSON).",
+                )
+                return SQLGenerationResult(
+                    sql_query=fallback,
+                    reasoning="Extracted from code block (LLM did not return valid JSON).",
+                    confidence=0.7,
+                    model_used=model,
+                    raw_content=raw,
+                    duration_ms=duration_ms,
+                    prompt_system=prompt_system,
+                    prompt_messages=prompt_messages,
+                    **llm_metadata,
+                )
+
         return SQLGenerationResult(
             sql_query=sql_query,
             reasoning=reasoning,
@@ -209,4 +296,5 @@ class SQLGenerator:
             duration_ms=duration_ms,
             prompt_system=prompt_system,
             prompt_messages=prompt_messages,
+            **llm_metadata,
         )

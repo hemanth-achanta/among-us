@@ -763,12 +763,7 @@ relationships:
     to_table: hive.pre_analytics.doc_consult_metrics
     to_column: customer_id
     description: Same customer across orders and metrics tables
-  - from_table: hive.data_model.doc_consult_orders
-    from_column: order_id
-    to_table: hive.mstr_tables.doc_consult_session_attribution
-    to_column: order_ids
-    type: special
-    description: "Session order_ids is comma-separated. Use: CROSS JOIN UNNEST(SPLIT(sa.order_ids, ',')) AS t(single_order_id) then JOIN on single_order_id = CAST(o.order_id AS VARCHAR)"
+
 
 join_notes: |
   Key join patterns for Presto/Trino:

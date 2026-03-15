@@ -36,6 +36,8 @@ class LLMResponse:
     output_tokens: int
     stop_reason:   str
     duration_ms:   float
+    max_tokens_budget: int = 0
+    output_truncated:  bool = False
 
 
 @dataclass
@@ -45,15 +47,37 @@ class TokenUsageSummary:
     total_input:  int = field(default=0)
     total_output: int = field(default=0)
     call_count:   int = field(default=0)
+    # Per-call (model, input_tokens, output_tokens) for cost calculation
+    _calls: list[tuple[str, int, int]] = field(default_factory=list)
 
     def add(self, response: LLMResponse) -> None:
         self.total_input  += response.input_tokens
         self.total_output += response.output_tokens
         self.call_count   += 1
+        self._calls.append(
+            (response.model, response.input_tokens, response.output_tokens)
+        )
 
     @property
     def total_tokens(self) -> int:
         return self.total_input + self.total_output
+
+    def cost_usd(
+        self,
+        pricing: dict[str, tuple[float, float]],
+        default_per_million: tuple[float, float] = (3.0, 15.0),
+    ) -> float:
+        """
+        Estimate API cost in USD from token usage and per-model pricing.
+
+        pricing: model_id -> (usd_per_1m_input, usd_per_1m_output)
+        default_per_million: used when model is not in pricing (e.g. Sonnet).
+        """
+        total = 0.0
+        for model, inp, out in self._calls:
+            in_per_m, out_per_m = pricing.get(model, default_per_million)
+            total += (inp / 1_000_000.0) * in_per_m + (out / 1_000_000.0) * out_per_m
+        return round(total, 6)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -156,13 +180,18 @@ class LLMClient:
                         temperature=_temperature,
                     )
 
+                stop = response.stop_reason or "unknown"
+                was_truncated = stop == "max_tokens"
+
                 llm_response = LLMResponse(
                     content=response.content[0].text,
                     model=response.model,
                     input_tokens=response.usage.input_tokens,
                     output_tokens=response.usage.output_tokens,
-                    stop_reason=response.stop_reason or "unknown",
+                    stop_reason=stop,
                     duration_ms=t.elapsed_ms,
+                    max_tokens_budget=_max_tokens,
+                    output_truncated=was_truncated,
                 )
 
                 self._usage.add(llm_response)
@@ -172,6 +201,8 @@ class LLMClient:
                     model=model,
                     input_tokens=llm_response.input_tokens,
                     output_tokens=llm_response.output_tokens,
+                    stop_reason=stop,
+                    output_truncated=was_truncated,
                     duration_ms=round(llm_response.duration_ms, 1),
                     attempt=attempt,
                 )

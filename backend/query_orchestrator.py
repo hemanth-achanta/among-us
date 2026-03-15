@@ -52,6 +52,7 @@ from llm.prompt_templates import (
     build_clarification_messages,
 )
 from utils.logger import Timer, get_logger
+from utils.conversation_logger import ConversationLogger
 
 log = get_logger(__name__)
 
@@ -113,13 +114,15 @@ class OrchestratorResult:
     query_iterations:  int
     steps:             list[QueryStep]     # All intermediate steps
     total_duration_ms: float
-    token_summary:     dict[str, int]
+    token_summary:     dict[str, int | float]
     # Prompts used for final answer (for debug display)
     interpretation_prompt_system:   str | None = None
     interpretation_prompt_messages: list[dict[str, Any]] | None = None
     error:             str | None = None   # Set if the pipeline failed completely
     # Last result DataFrame (for DeepAnalyze report generation)
     result_dataframe:  pd.DataFrame | None = None
+    # Per-conversation trace log identifier
+    conversation_id:   str | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -212,14 +215,35 @@ class QueryOrchestrator:
         self._llm.reset_usage()
         steps: list[QueryStep] = []
 
+        # ── Conversation trace logger ─────────────────────────────────────
+        clog: ConversationLogger | None = None
+        if getattr(config, "CONVERSATION_LOG_ENABLED", False):
+            log_dir = getattr(config, "CONVERSATION_LOG_DIR", "logs/conversations")
+            clog = ConversationLogger(
+                question=question,
+                log_dir=log_dir,
+                chat_history=chat_history,
+            )
+
         with Timer() as total_timer:
 
             # ── 1. Complexity estimation ─────────────────────────────────────
             complexity = self._complexity_estimator.estimate(question)
             log.info("pipeline_start", question=question[:200], complexity=complexity.value)
+            if clog:
+                clog.log_stage(
+                    "complexity_estimation",
+                    result=complexity.value,
+                )
 
             # ── 2. Initial model selection ───────────────────────────────────
             initial_model = self._router.select(complexity)
+            if clog:
+                clog.log_stage(
+                    "model_selection",
+                    model=initial_model,
+                    complexity=complexity.value,
+                )
 
             # ── 3. Retry manager ─────────────────────────────────────────────
             retry_mgr = RetryManager(
@@ -229,7 +253,7 @@ class QueryOrchestrator:
             )
 
             # ── 4. Query planning ─────────────────────────────────────────────
-            plan = self._plan_queries(question)
+            plan = self._plan_queries(question, clog=clog)
 
             # ── 5. Iterative query loop following the plan ───────────────────
             previous_queries: list[dict[str, Any]] = []
@@ -242,6 +266,7 @@ class QueryOrchestrator:
             subqueries = plan.subqueries or [SubQueryPlan(id=1, description="Answer the question directly.")]
             # Hard cap from config to avoid unbounded multi-query runs
             subqueries = subqueries[: config.MAX_QUERIES_PER_QUESTION]
+            last_failed_attempt: dict[str, str] | None = None
 
             for sub_idx, sub in enumerate(subqueries, start=1):
                 if iteration >= self._max_iterations:
@@ -254,7 +279,7 @@ class QueryOrchestrator:
                     # If the planner suggested specific tables for this sub-query,
                     # build a schema snippet limited to those tables to keep
                     # prompts compact and layer-aware.
-                    schema_override: str | None = None
+                    schema_override = None
                     if sub.candidate_tables:
                         schema_override = self._schema_loader._format_tables_for_prompt(
                             sub.candidate_tables
@@ -269,7 +294,9 @@ class QueryOrchestrator:
                         retry_mgr=retry_mgr,
                         progress_callback=progress_callback,
                         subquery_description=sub.description,
-                            schema_override=schema_override,
+                        schema_override=schema_override,
+                        last_failed_attempt=last_failed_attempt,
+                        clog=clog,
                     )
 
                     # Annotate step with planning metadata for debug display
@@ -283,11 +310,19 @@ class QueryOrchestrator:
                         final_model     = model
                         executed_results.append(execution)
 
-                        # Accumulate context for next iteration
+                        # Accumulate context for next iteration; clear retry context
                         previous_queries.append({
                             "sql":            step.sql_generated or "",
                             "result_summary": step.result_summary,
                         })
+                        last_failed_attempt = None
+                    elif should_continue:
+                        # Feed the failure back so the next attempt can fix the SQL
+                        last_failed_attempt = {
+                            "sql": step.sql_generated or "",
+                            "error": step.execution_error
+                            or "; ".join(step.validation_errors or []),
+                        }
 
                     if not should_continue:
                         # Move on to the next planned sub-query, if any.
@@ -303,6 +338,12 @@ class QueryOrchestrator:
                         chat_history=chat_history,
                     )
                     rows_returned = 0
+                    if clog:
+                        clog.log_stage(
+                            "interpretation_no_results",
+                            model=final_model,
+                            sql=final_sql,
+                        )
                 else:
                     # Complete pipeline failure — attempt to ask clarifying questions
                     failure_reasons = "; ".join(
@@ -316,7 +357,14 @@ class QueryOrchestrator:
                             chat_history=chat_history,
                         )
                     )
-                    return OrchestratorResult(
+                    if clog:
+                        clog.log_stage(
+                            "clarification_generated",
+                            failure_reasons=failure_reasons,
+                            clarification_answer=clarification_answer,
+                        )
+
+                    result = OrchestratorResult(
                         answer=clarification_answer,
                         sql_used=None,
                         rows_returned=0,
@@ -330,6 +378,19 @@ class QueryOrchestrator:
                         interpretation_prompt_messages=clar_messages,
                         error=failure_reasons,
                     )
+                    if clog:
+                        result.conversation_id = clog.conversation_id
+                        clog.finalize(
+                            answer=clarification_answer,
+                            rows_returned=0,
+                            model_used=final_model,
+                            complexity=complexity.value,
+                            query_iterations=iteration,
+                            total_duration_ms=total_timer.elapsed_ms,
+                            token_summary=self._token_summary(),
+                            error=failure_reasons,
+                        )
+                    return result
             else:
                 if len(executed_results) == 1:
                     final_execution = executed_results[-1]
@@ -363,6 +424,34 @@ class QueryOrchestrator:
                     rows_returned = final_execution.row_count
                     final_sql = final_execution.sql_executed
 
+                # Log interpretation details
+                if clog:
+                    clog.log_llm_call(
+                        purpose="result_interpretation",
+                        model=interpretation.model_used,
+                        prompt_system=interpretation.prompt_system,
+                        prompt_messages=interpretation.prompt_messages,
+                        raw_response=interpretation.raw_llm_content,
+                        stop_reason=interpretation.stop_reason,
+                        input_tokens=interpretation.input_tokens,
+                        output_tokens=interpretation.output_tokens,
+                        duration_ms=interpretation.duration_ms,
+                        max_tokens_budget=interpretation.max_tokens_budget,
+                        answer_length=len(interpretation.answer),
+                        table_data_chars_original=interpretation.table_data_chars_original,
+                        table_data_chars_sent=interpretation.table_data_chars_sent,
+                        table_data_was_truncated=interpretation.table_data_was_truncated,
+                        stats_chars_sent=interpretation.stats_chars_sent,
+                    )
+                    if interpretation.table_data_was_truncated:
+                        clog.log_truncation(
+                            location="result_interpreter._format_table",
+                            original_size=interpretation.table_data_chars_original,
+                            truncated_size=interpretation.table_data_chars_sent,
+                            unit="chars",
+                            detail="Table data exceeded _MAX_TABLE_CHARS and was truncated before sending to LLM.",
+                        )
+
             final_model = interpretation.model_used
 
         log.info(
@@ -373,7 +462,7 @@ class QueryOrchestrator:
             total_duration_ms=round(total_timer.elapsed_ms, 1),
         )
 
-        return OrchestratorResult(
+        orch_result = OrchestratorResult(
             answer=interpretation.answer,
             sql_used=final_sql,
             rows_returned=rows_returned,
@@ -388,9 +477,24 @@ class QueryOrchestrator:
             result_dataframe=final_execution.dataframe,
         )
 
+        if clog:
+            orch_result.conversation_id = clog.conversation_id
+            clog.finalize(
+                answer=interpretation.answer,
+                sql_used=final_sql,
+                rows_returned=rows_returned,
+                model_used=final_model,
+                complexity=complexity.value,
+                query_iterations=iteration,
+                total_duration_ms=total_timer.elapsed_ms,
+                token_summary=self._token_summary(),
+            )
+
+        return orch_result
+
     # ── Internal helpers ──────────────────────────────────────────────────────
 
-    def _plan_queries(self, question: str) -> QueryPlan:
+    def _plan_queries(self, question: str, clog: ConversationLogger | None = None) -> QueryPlan:
         """
         Use the LLM to decide whether multiple queries are needed and, if so,
         return a small list of sub-query intents.
@@ -421,6 +525,20 @@ class QueryOrchestrator:
                     messages=messages,
                     system=system,
                     max_tokens=512,
+                )
+
+            if clog:
+                clog.log_llm_call(
+                    purpose="query_planning",
+                    model=config.LOW_MODEL,
+                    prompt_system=system,
+                    prompt_messages=messages,
+                    raw_response=response.content,
+                    stop_reason=response.stop_reason,
+                    input_tokens=response.input_tokens,
+                    output_tokens=response.output_tokens,
+                    duration_ms=t.elapsed_ms,
+                    max_tokens_budget=512,
                 )
 
             raw = response.content
@@ -467,16 +585,36 @@ class QueryOrchestrator:
                 duration_ms=round(t.elapsed_ms, 1),
             )
 
-            return QueryPlan(
+            plan = QueryPlan(
                 requires_multiple_queries=requires_multi,
                 subqueries=subqueries,
             )
+            if clog:
+                clog.log_stage(
+                    "query_planning_result",
+                    requires_multiple=requires_multi,
+                    planned_queries=len(subqueries),
+                    subqueries=[
+                        {"id": sq.id, "description": sq.description,
+                         "subject": sq.subject, "preferred_layer": sq.preferred_layer,
+                         "candidate_tables": sq.candidate_tables}
+                        for sq in subqueries
+                    ],
+                    duration_ms=round(t.elapsed_ms, 1),
+                )
+            return plan
 
         except Exception as exc:  # noqa: BLE001
             log.warning(
                 "query_planning_failed",
                 error=str(exc),
             )
+            if clog:
+                clog.log_stage(
+                    "query_planning_failed",
+                    error=str(exc),
+                    fallback="single_query",
+                )
             # Conservative fallback: single-query plan
             return QueryPlan(
                 requires_multiple_queries=False,
@@ -545,6 +683,8 @@ class QueryOrchestrator:
         progress_callback: Optional[Callable[[QueryStep], None]] = None,
         subquery_description: str | None = None,
         schema_override: str | None = None,
+        last_failed_attempt: dict[str, str] | None = None,
+        clog: ConversationLogger | None = None,
     ) -> tuple[QueryStep, ExecutionResult | None, bool]:
         """
         Run one SQL generation → validation → execution cycle.
@@ -569,9 +709,15 @@ class QueryOrchestrator:
                 chat_history=chat_history,
                 subquery_description=subquery_description,
                 schema_override=schema_override,
+                last_failed_attempt=last_failed_attempt,
             )
         except Exception as exc:  # noqa: BLE001
             log.error("sql_generation_exception", error=str(exc), iteration=iteration)
+            if clog:
+                clog.log_stage(
+                    "sql_generation_exception",
+                    iteration=iteration, model=model, error=str(exc),
+                )
             step = QueryStep(
                 iteration=iteration, model_used=model,
                 sql_generated=None, confidence=0.0,
@@ -586,6 +732,25 @@ class QueryOrchestrator:
                 except Exception as cb_exc:  # noqa: BLE001
                     log.warning("progress_callback_error", error=str(cb_exc))
             return step, None, False
+
+        # Log the SQL generation LLM call
+        if clog:
+            clog.log_llm_call(
+                purpose=f"sql_generation__iter{iteration}",
+                model=model,
+                prompt_system=gen_result.prompt_system,
+                prompt_messages=gen_result.prompt_messages,
+                raw_response=gen_result.raw_content,
+                stop_reason=gen_result.stop_reason,
+                input_tokens=gen_result.input_tokens,
+                output_tokens=gen_result.output_tokens,
+                duration_ms=gen_result.duration_ms,
+                max_tokens_budget=gen_result.max_tokens_budget,
+                parsed_sql=gen_result.sql_query,
+                confidence=gen_result.confidence,
+                reasoning=gen_result.reasoning,
+                subquery_description=subquery_description or "",
+            )
 
         if gen_result.sql_query is None:
             step = QueryStep(
@@ -612,6 +777,13 @@ class QueryOrchestrator:
                 confidence=gen_result.confidence,
                 model=model,
             )
+            if clog:
+                clog.log_stage(
+                    "low_confidence_retry",
+                    iteration=iteration,
+                    confidence=gen_result.confidence,
+                    model=model,
+                )
             if retry_mgr.should_retry(
                 RetryReason.LOW_CONFIDENCE,
                 f"confidence={gen_result.confidence:.2f}",
@@ -625,20 +797,44 @@ class QueryOrchestrator:
                         chat_history=chat_history,
                         subquery_description=subquery_description,
                         schema_override=schema_override,
+                        last_failed_attempt=last_failed_attempt,
                     )
                     model = retry_mgr.current_model
+                    if clog:
+                        clog.log_llm_call(
+                            purpose=f"sql_generation__iter{iteration}__confidence_retry",
+                            model=model,
+                            prompt_system=gen_result.prompt_system,
+                            prompt_messages=gen_result.prompt_messages,
+                            raw_response=gen_result.raw_content,
+                            stop_reason=gen_result.stop_reason,
+                            input_tokens=gen_result.input_tokens,
+                            output_tokens=gen_result.output_tokens,
+                            duration_ms=gen_result.duration_ms,
+                            max_tokens_budget=gen_result.max_tokens_budget,
+                            parsed_sql=gen_result.sql_query,
+                            confidence=gen_result.confidence,
+                            reasoning=gen_result.reasoning,
+                        )
                 except Exception as exc:  # noqa: BLE001
                     log.error("sql_regen_exception", error=str(exc))
 
         # ── c. Validation ────────────────────────────────────────────────────
         val_result = self._sql_validator.validate(gen_result.sql_query)
+        if clog:
+            clog.log_stage(
+                f"sql_validation__iter{iteration}",
+                sql=gen_result.sql_query,
+                is_valid=val_result.is_valid,
+                errors=val_result.errors if not val_result.is_valid else [],
+            )
+
         if not val_result.is_valid:
             validation_errors = val_result.errors
             if retry_mgr.should_retry(
                 RetryReason.VALIDATION_ERROR,
                 "; ".join(validation_errors),
             ):
-                # Retry with next model — will be picked up in next outer loop
                 step = QueryStep(
                     iteration=iteration, model_used=model,
                     sql_generated=gen_result.sql_query,
@@ -679,6 +875,12 @@ class QueryOrchestrator:
             exec_result = self._sql_executor.execute(gen_result.sql_query)
         except QueryExecutionError as exc:
             execution_error = str(exc)
+            if clog:
+                clog.log_stage(
+                    f"sql_execution_error__iter{iteration}",
+                    sql=gen_result.sql_query,
+                    error=execution_error,
+                )
             if retry_mgr.should_retry(RetryReason.EXECUTION_ERROR, execution_error):
                 step = QueryStep(
                     iteration=iteration, model_used=model,
@@ -713,6 +915,38 @@ class QueryOrchestrator:
                     except Exception as cb_exc:  # noqa: BLE001
                         log.warning("progress_callback_error", error=str(cb_exc))
                 return step, None, False
+
+        # Log successful execution with data snapshot
+        if clog:
+            preview = ""
+            try:
+                preview = exec_result.dataframe.head(10).to_string(index=False)
+            except Exception:  # noqa: BLE001
+                preview = f"({exec_result.row_count} rows, columns: {exec_result.column_names})"
+            clog.log_stage(
+                f"sql_execution_success__iter{iteration}",
+                sql=gen_result.sql_query,
+                row_count=exec_result.row_count,
+                column_names=exec_result.column_names,
+                truncated=exec_result.truncated,
+                duration_ms=round(exec_result.duration_ms, 1),
+            )
+            clog.log_data_snapshot(
+                f"query_result__iter{iteration}",
+                row_count=exec_result.row_count,
+                column_count=len(exec_result.column_names),
+                column_names=exec_result.column_names,
+                data_chars=len(preview),
+                preview=preview,
+            )
+            if exec_result.truncated:
+                clog.log_truncation(
+                    location=f"sql_executor__iter{iteration}",
+                    original_size=exec_result.row_count,
+                    truncated_size=config.MAX_RESULT_ROWS,
+                    unit="rows",
+                    detail=f"Query returned more than MAX_RESULT_ROWS ({config.MAX_RESULT_ROWS}); rows were capped.",
+                )
 
         # ── e. Empty result check ────────────────────────────────────────────
         if exec_result.row_count == 0:
@@ -769,11 +1003,13 @@ class QueryOrchestrator:
 
         return step, exec_result, should_continue
 
-    def _token_summary(self) -> dict[str, int]:
+    def _token_summary(self) -> dict[str, int | float]:
         usage = self._llm.usage
+        pricing = getattr(config, "MODEL_PRICING", {})
         return {
             "input_tokens":  usage.total_input,
             "output_tokens": usage.total_output,
             "total_tokens":  usage.total_tokens,
             "llm_calls":     usage.call_count,
+            "cost_usd":      usage.cost_usd(pricing),
         }

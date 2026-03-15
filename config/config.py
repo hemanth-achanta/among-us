@@ -87,6 +87,16 @@ TOKEN_LIMITS: dict[str, int] = {
     HIGH_MODEL:   16_384,
 }
 
+# API cost: USD per 1M input tokens, USD per 1M output tokens (for debug cost display)
+# Keys are model identifiers; unknown models fall back to Sonnet pricing.
+MODEL_PRICING: dict[str, tuple[float, float]] = {
+    "claude-3-5-haiku-20241022":        (0.80, 4.00),
+    "claude-haiku-4-5-20251001":        (1.00, 5.00),
+    "claude-3-5-sonnet-20241022":       (3.00, 15.00),
+    "claude-sonnet-4-6":                (3.00, 15.00),
+    "claude-sonnet-4-5-20250514":       (3.00, 15.00),
+}
+
 # Max tokens included for schema context in a single prompt.
 # Must be large enough to fit all tables + relationships + join notes.
 SCHEMA_CONTEXT_TOKEN_LIMIT: int = int(os.getenv("SCHEMA_CONTEXT_TOKEN_LIMIT", "8000"))
@@ -131,6 +141,13 @@ RETRY_ON_EMPTY_RESULT: bool = os.getenv("RETRY_ON_EMPTY_RESULT", "true").lower()
 LOG_LEVEL:  str = os.getenv("LOG_LEVEL", "INFO")
 LOG_FORMAT: str = os.getenv("LOG_FORMAT", "json")   # "json" | "text"
 LOG_FILE:   str = os.getenv("LOG_FILE", str(_ROOT / "logs" / "analytics.log"))
+
+# Per-conversation trace logs (one JSON file per question)
+CONVERSATION_LOG_ENABLED: bool = os.getenv("CONVERSATION_LOG_ENABLED", "true").lower() == "true"
+CONVERSATION_LOG_DIR: str = os.getenv(
+    "CONVERSATION_LOG_DIR",
+    str(_ROOT / "logs" / "conversations"),
+)
 
 
 # ── Streamlit UI ──────────────────────────────────────────────────────────────

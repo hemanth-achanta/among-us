@@ -1,15 +1,10 @@
-## Multi-table RCA & Senior Analyst Upgrade
+## Changes in this commit
 
-- **Root cause fix**: Increased `SCHEMA_CONTEXT_TOKEN_LIMIT` from 3,000 to 8,000 tokens — the LLM was literally unable to see all 3 tables because the schema was truncated at 12K chars. Now all tables, relationships, and join notes fit within the 32K char budget.
-- **Added table relationships and join notes** to `schema.yaml`: explicit mappings between orders ↔ metrics (via `order_id`), orders ↔ sessions (via comma-separated `order_ids` with Presto UNNEST syntax), plus a table selection guide for when to use each table.
-- **Overhauled all LLM prompts** for analyst-grade output:
-  - SQL generation: Presto/Trino syntax guide, RCA reasoning patterns, multi-table JOIN guidance, partition filter reminders.
-  - Result interpretation: Removed the "3-5 sentences" cap; now produces thorough RCA-style analysis with specific numbers, pattern identification, and proactive insights.
-  - Query planning: Smarter about when to JOIN tables in a single query vs. separate queries; explicit RCA strategy (quantify → break down → drill in).
-  - Complexity estimation: Added RCA/funnel/conversion/session signals to heuristic detection.
-- **Fixed SQL validator** for multi-table queries: multi-CTE regex now handles `WITH cte1 AS (...), cte2 AS (...)`, and Presto's `UNNEST`/`LATERAL` are no longer flagged as unknown tables.
-- **Schema loader** now injects relationships and join notes into every SQL generation prompt, and filters to only relevant relationships when using schema overrides.
-- **Result interpreter** now computes summary statistics (sum/mean/min/max) for numeric columns and passes them to the LLM alongside raw data for richer analysis.
-- **Config tuning**: `MAX_QUERY_ITERATIONS` 3→5, `MAX_QUERIES_PER_QUESTION` 3→4, `SCHEMA_SAMPLE_ROWS` 3→2 (token cost savings), planner `max_tokens` 256→512.
+- **New: Per-conversation trace logging** — Every question-answer cycle now writes a complete JSON trace to `logs/conversations/<id>.json`, capturing the full pipeline: question, chat history, complexity estimation, query planning, every SQL generation LLM call (with full prompts, raw responses, stop reasons, token counts), validation results, execution results (with data previews), interpretation LLM calls, and the final answer.
+- **Truncation tracking** — All data truncation points are now explicitly detected and logged: LLM output truncation (`stop_reason == "max_tokens"`), table data truncation in the result interpreter, and row cap truncation in the SQL executor. Each truncation event records before/after sizes so you can immediately see where data was cut.
+- **LLM response metadata** — `LLMResponse`, `SQLGenerationResult`, and `InterpretationResult` now carry `stop_reason`, `output_truncated`, `input_tokens`, `output_tokens`, and `max_tokens_budget` fields, making it possible to trace exactly what the LLM produced and whether it was cut off.
+- **UI: Conversation trace viewer** — Each assistant response now shows a "Conversation trace" section (in debug mode) with the conversation ID and a full expandable trace viewer showing all pipeline stages, truncation alerts, and data snapshots. The sidebar also includes a log browser to load and inspect past conversation traces.
+- **Config** — Added `CONVERSATION_LOG_ENABLED` (default: true) and `CONVERSATION_LOG_DIR` (default: `logs/conversations/`) to control the new logging.
+- **Prompt behaviour tweaks** — Updated SQL generation and interpretation prompts so the LLM (a) prefers performing aggregations in the database using GROUP BY and aggregate functions, (b) explicitly reasons about which tables to use for each question, preferring metric/aggregated tables when possible, and (c) always receives today’s date to correctly resolve relative date phrases like "today", "yesterday", or "last 7 days".
 
 Run status: N
