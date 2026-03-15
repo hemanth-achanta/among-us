@@ -694,119 +694,138 @@ def main() -> None:
 
         # Run the pipeline
         with st.chat_message("assistant"):
-            with st.spinner("Analysing your question…"):
-                live_debug_placeholder = (
-                    st.empty() if st.session_state.get("show_debug") else None
+            # Live status feed — always visible, last 3 steps in small font
+            _status_placeholder = st.empty()
+            _status_history: list[str] = []
+
+            def _status_callback(msg: str) -> None:
+                """Push a status message and render the most recent 3, one per line."""
+                _status_history.append(msg)
+                recent = _status_history[-3:]
+                blocks = [
+                    f'<div style="font-size:0.82em;line-height:1.6;color:#888;margin:2px 0">'
+                    f"{'⏳ <strong>' if i == len(recent) - 1 else '✅ '}"
+                    f"{s}{'</strong>' if i == len(recent) - 1 else ''}"
+                    f"</div>"
+                    for i, s in enumerate(recent)
+                ]
+                _status_placeholder.markdown(
+                    "".join(blocks),
+                    unsafe_allow_html=True,
                 )
 
-                def _progress_callback(step) -> None:
-                    """Stream live debug updates for each query iteration."""
-                    if live_debug_placeholder is None:
-                        return
-                    with live_debug_placeholder.container():
-                        sub_desc = getattr(step, "subquery_description", "") or ""
-                        header = (
-                            f"Live debug — step {step.iteration} "
-                            f"(model: {step.model_used})"
-                        )
-                        if sub_desc:
-                            header = f"{header} · {sub_desc}"
-                        st.subheader(header)
-                        if step.sql_generated:
-                            st.markdown("**SQL candidate**")
-                            st.code(step.sql_generated, language="sql")
-                        if step.validation_errors:
-                            st.markdown("**Validation errors**")
-                            st.error("; ".join(step.validation_errors))
-                        if step.execution_error:
-                            st.markdown("**Execution error**")
-                            st.error(step.execution_error)
-                        else:
-                            st.markdown(f"**Rows returned**: {step.rows_returned}")
+            live_debug_placeholder = (
+                st.empty() if st.session_state.get("show_debug") else None
+            )
 
-                try:
-                    orchestrator = st.session_state["orchestrator"]
-                    # Measure end-to-end time from question to final result.
-                    with Timer() as end_to_end_timer:
-                        try:
-                            # Preferred path: orchestrator that supports live progress.
+            def _progress_callback(step) -> None:
+                """Stream live debug updates for each query iteration."""
+                if live_debug_placeholder is None:
+                    return
+                with live_debug_placeholder.container():
+                    sub_desc = getattr(step, "subquery_description", "") or ""
+                    header = (
+                        f"Live debug — step {step.iteration} "
+                        f"(model: {step.model_used})"
+                    )
+                    if sub_desc:
+                        header = f"{header} · {sub_desc}"
+                    st.subheader(header)
+                    if step.sql_generated:
+                        st.markdown("**SQL candidate**")
+                        st.code(step.sql_generated, language="sql")
+                    if step.validation_errors:
+                        st.markdown("**Validation errors**")
+                        st.error("; ".join(step.validation_errors))
+                    if step.execution_error:
+                        st.markdown("**Execution error**")
+                        st.error(step.execution_error)
+                    else:
+                        st.markdown(f"**Rows returned**: {step.rows_returned}")
+
+            try:
+                orchestrator = st.session_state["orchestrator"]
+                # Measure end-to-end time from question to final result.
+                with Timer() as end_to_end_timer:
+                    try:
+                        result = orchestrator.run(
+                            question,
+                            chat_history=chat_history,
+                            progress_callback=(
+                                _progress_callback if live_debug_placeholder else None
+                            ),
+                            status_callback=_status_callback,
+                        )
+                    except TypeError as exc:
+                        # Backwards compatibility for older orchestrator instances
+                        if "status_callback" in str(exc) or "progress_callback" in str(exc):
                             result = orchestrator.run(
                                 question,
                                 chat_history=chat_history,
-                                progress_callback=(
-                                    _progress_callback if live_debug_placeholder else None
-                                ),
                             )
-                        except TypeError as exc:
-                            # Backwards compatibility for older orchestrator instances
-                            # that do not accept a progress_callback argument.
-                            if "progress_callback" in str(exc):
-                                result = orchestrator.run(
-                                    question,
-                                    chat_history=chat_history,
-                                )
-                            else:
-                                raise
+                        else:
+                            raise
 
-                    # Build meta dict for the rendered message
-                    meta = {
-                        "sql_used":         result.sql_used,
-                        "rows_returned":    result.rows_returned,
-                        "model_used":       result.model_used,
-                        "complexity":       result.complexity.value,
-                        "query_iterations": result.query_iterations,
-                         # End-to-end latency as seen from the UI
-                        "end_to_end_ms":    getattr(end_to_end_timer, "elapsed_ms", result.total_duration_ms),
-                        "conversation_id":  getattr(result, "conversation_id", None),
-                        # Use getattr for backwards compatibility while the app reloads.
-                        "interpretation_prompt_system":   getattr(result, "interpretation_prompt_system", None),
-                        "interpretation_prompt_messages": getattr(result, "interpretation_prompt_messages", None),
-                        "steps":            [
-                            {
-                                "iteration":            s.iteration,
-                                "model_used":           s.model_used,
-                                "sql_generated":        s.sql_generated,
-                                "confidence":           s.confidence,
-                                "reasoning":            s.reasoning,
-                                "validation_errors":    s.validation_errors,
-                                "execution_error":      s.execution_error,
-                                "rows_returned":        s.rows_returned,
-                                "subquery_id":          getattr(s, "subquery_id", None),
-                                "subquery_description": getattr(s, "subquery_description", ""),
-                                # getattr for backwards compatibility with older QueryStep objects
-                                "sql_prompt_system":    getattr(s, "sql_prompt_system", ""),
-                                "sql_prompt_messages":  getattr(s, "sql_prompt_messages", []),
-                            }
-                            for s in result.steps
-                        ],
-                        "total_duration_ms": result.total_duration_ms,
-                        "token_summary":     result.token_summary,
-                        "error":             result.error,
-                    }
+                # Clear the live status feed once the answer is ready
+                _status_placeholder.empty()
 
-                    assistant_msg = {
-                        "role":    "assistant",
-                        "content": result.answer,
-                        "meta":    meta,
-                    }
-                    st.session_state["messages"].append(assistant_msg)
+                # Build meta dict for the rendered message
+                meta = {
+                    "sql_used":         result.sql_used,
+                    "rows_returned":    result.rows_returned,
+                    "model_used":       result.model_used,
+                    "complexity":       result.complexity.value,
+                    "query_iterations": result.query_iterations,
+                    "end_to_end_ms":    getattr(end_to_end_timer, "elapsed_ms", result.total_duration_ms),
+                    "conversation_id":  getattr(result, "conversation_id", None),
+                    "interpretation_prompt_system":   getattr(result, "interpretation_prompt_system", None),
+                    "interpretation_prompt_messages": getattr(result, "interpretation_prompt_messages", None),
+                    "steps":            [
+                        {
+                            "iteration":            s.iteration,
+                            "model_used":           s.model_used,
+                            "sql_generated":        s.sql_generated,
+                            "confidence":           s.confidence,
+                            "reasoning":            s.reasoning,
+                            "validation_errors":    s.validation_errors,
+                            "execution_error":      s.execution_error,
+                            "rows_returned":        s.rows_returned,
+                            "subquery_id":          getattr(s, "subquery_id", None),
+                            "subquery_description": getattr(s, "subquery_description", ""),
+                            "sql_prompt_system":    getattr(s, "sql_prompt_system", ""),
+                            "sql_prompt_messages":  getattr(s, "sql_prompt_messages", []),
+                        }
+                        for s in result.steps
+                    ],
+                    "total_duration_ms": result.total_duration_ms,
+                    "token_summary":     result.token_summary,
+                    "error":             result.error,
+                }
 
-                    # Store last result for DeepAnalyze report generation
-                    if result.error is None and getattr(result, "result_dataframe", None) is not None:
-                        st.session_state["last_result_df"] = result.result_dataframe
-                        st.session_state["last_result_question"] = question
-                        st.session_state["last_result_sql"] = result.sql_used
-                        st.session_state["last_deepanalyze_error"] = None
+                assistant_msg = {
+                    "role":    "assistant",
+                    "content": result.answer,
+                    "meta":    meta,
+                }
+                st.session_state["messages"].append(assistant_msg)
 
-                except Exception as exc:  # noqa: BLE001
-                    err_msg = f"Unexpected error: {exc}"
-                    log.error("ui_pipeline_error", error=str(exc), traceback=traceback.format_exc())
-                    assistant_msg = {
-                        "role":    "assistant",
-                        "content": "An unexpected error occurred. Please check the logs.",
-                        "meta":    {"error": err_msg},
-                    }
-                    st.session_state["messages"].append(assistant_msg)
+                # Store last result for DeepAnalyze report generation
+                if result.error is None and getattr(result, "result_dataframe", None) is not None:
+                    st.session_state["last_result_df"] = result.result_dataframe
+                    st.session_state["last_result_question"] = question
+                    st.session_state["last_result_sql"] = result.sql_used
+                    st.session_state["last_deepanalyze_error"] = None
+
+            except Exception as exc:  # noqa: BLE001
+                _status_placeholder.empty()
+                err_msg = f"Unexpected error: {exc}"
+                log.error("ui_pipeline_error", error=str(exc), traceback=traceback.format_exc())
+                assistant_msg = {
+                    "role":    "assistant",
+                    "content": "An unexpected error occurred. Please check the logs.",
+                    "meta":    {"error": err_msg},
+                }
+                st.session_state["messages"].append(assistant_msg)
 
         # Rerun to re-render history with the new messages (including debug panels)
         st.rerun()

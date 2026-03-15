@@ -200,6 +200,7 @@ class QueryOrchestrator:
         question: str,
         chat_history: list[dict[str, str]] | None = None,
         progress_callback: Optional[Callable[[QueryStep], None]] = None,
+        status_callback: Optional[Callable[[str], None]] = None,
     ) -> OrchestratorResult:
         """
         Execute the full analytics pipeline for *question*.
@@ -207,6 +208,8 @@ class QueryOrchestrator:
         Parameters
         ----------
         question: Natural-language question from the stakeholder.
+        status_callback: Called with a short human-readable status string at
+                         each major pipeline stage (for live UI updates).
 
         Returns
         -------
@@ -214,6 +217,13 @@ class QueryOrchestrator:
         """
         self._llm.reset_usage()
         steps: list[QueryStep] = []
+
+        def _status(msg: str) -> None:
+            if status_callback is not None:
+                try:
+                    status_callback(msg)
+                except Exception:  # noqa: BLE001
+                    pass
 
         # ── Conversation trace logger ─────────────────────────────────────
         clog: ConversationLogger | None = None
@@ -228,7 +238,9 @@ class QueryOrchestrator:
         with Timer() as total_timer:
 
             # ── 1. Complexity estimation ─────────────────────────────────────
+            _status("Estimating question complexity…")
             complexity = self._complexity_estimator.estimate(question)
+            _status(f"Complexity: {complexity.value}")
             log.info("pipeline_start", question=question[:200], complexity=complexity.value)
             if clog:
                 clog.log_stage(
@@ -238,6 +250,7 @@ class QueryOrchestrator:
 
             # ── 2. Initial model selection ───────────────────────────────────
             initial_model = self._router.select(complexity)
+            _status(f"Selected model: {initial_model.split('-')[0].title()}")
             if clog:
                 clog.log_stage(
                     "model_selection",
@@ -253,7 +266,10 @@ class QueryOrchestrator:
             )
 
             # ── 4. Query planning ─────────────────────────────────────────────
+            _status("Planning query strategy…")
             plan = self._plan_queries(question, clog=clog)
+            n_sub = len(plan.subqueries) if plan.subqueries else 1
+            _status(f"Query plan ready — {n_sub} sub-quer{'ies' if n_sub != 1 else 'y'}")
 
             # ── 5. Iterative query loop following the plan ───────────────────
             previous_queries: list[dict[str, Any]] = []
@@ -276,6 +292,9 @@ class QueryOrchestrator:
                     iteration += 1
                     model = retry_mgr.current_model
 
+                    sub_label = sub.description[:60] if sub.description else f"query {sub_idx}"
+                    _status(f"Generating SQL for: {sub_label}")
+
                     # If the planner suggested specific tables for this sub-query,
                     # build a schema snippet limited to those tables to keep
                     # prompts compact and layer-aware.
@@ -297,6 +316,7 @@ class QueryOrchestrator:
                         schema_override=schema_override,
                         last_failed_attempt=last_failed_attempt,
                         clog=clog,
+                        status_callback=status_callback,
                     )
 
                     # Annotate step with planning metadata for debug display
@@ -309,6 +329,7 @@ class QueryOrchestrator:
                         final_sql       = step.sql_generated
                         final_model     = model
                         executed_results.append(execution)
+                        _status(f"Query returned {execution.row_count} rows")
 
                         # Accumulate context for next iteration; clear retry context
                         previous_queries.append({
@@ -317,6 +338,7 @@ class QueryOrchestrator:
                         })
                         last_failed_attempt = None
                     elif should_continue:
+                        _status("Retrying with adjusted SQL…")
                         # Feed the failure back so the next attempt can fix the SQL
                         last_failed_attempt = {
                             "sql": step.sql_generated or "",
@@ -329,6 +351,7 @@ class QueryOrchestrator:
                         break
 
             # ── 6. Result interpretation ─────────────────────────────────────
+            _status("Interpreting results…")
             if not executed_results:
                 if final_execution is not None and final_execution.row_count == 0:
                     interpretation = self._result_interpreter.interpret_no_results(
@@ -453,6 +476,7 @@ class QueryOrchestrator:
                         )
 
             final_model = interpretation.model_used
+            _status("Composing answer…")
 
         log.info(
             "pipeline_complete",
@@ -685,6 +709,7 @@ class QueryOrchestrator:
         schema_override: str | None = None,
         last_failed_attempt: dict[str, str] | None = None,
         clog: ConversationLogger | None = None,
+        status_callback: Optional[Callable[[str], None]] = None,
     ) -> tuple[QueryStep, ExecutionResult | None, bool]:
         """
         Run one SQL generation → validation → execution cycle.
@@ -820,6 +845,11 @@ class QueryOrchestrator:
                     log.error("sql_regen_exception", error=str(exc))
 
         # ── c. Validation ────────────────────────────────────────────────────
+        if status_callback:
+            try:
+                status_callback("Validating SQL…")
+            except Exception:  # noqa: BLE001
+                pass
         val_result = self._sql_validator.validate(gen_result.sql_query)
         if clog:
             clog.log_stage(
@@ -871,6 +901,11 @@ class QueryOrchestrator:
                 return step, None, False
 
         # ── d. Execution ─────────────────────────────────────────────────────
+        if status_callback:
+            try:
+                status_callback("Running SQL against database…")
+            except Exception:  # noqa: BLE001
+                pass
         try:
             exec_result = self._sql_executor.execute(gen_result.sql_query)
         except QueryExecutionError as exc:
