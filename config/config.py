@@ -87,11 +87,12 @@ TOKEN_LIMITS: dict[str, int] = {
     HIGH_MODEL:   16_384,
 }
 
-# Max tokens included for schema context in a single prompt
-SCHEMA_CONTEXT_TOKEN_LIMIT: int = int(os.getenv("SCHEMA_CONTEXT_TOKEN_LIMIT", "3000"))
+# Max tokens included for schema context in a single prompt.
+# Must be large enough to fit all tables + relationships + join notes.
+SCHEMA_CONTEXT_TOKEN_LIMIT: int = int(os.getenv("SCHEMA_CONTEXT_TOKEN_LIMIT", "8000"))
 
-# Max sample rows injected per table in prompts
-SCHEMA_SAMPLE_ROWS: int = int(os.getenv("SCHEMA_SAMPLE_ROWS", "3"))
+# Max sample rows injected per table in prompts (2 balances cost vs. context)
+SCHEMA_SAMPLE_ROWS: int = int(os.getenv("SCHEMA_SAMPLE_ROWS", "2"))
 
 # LLM temperature (0 = deterministic; keep low for SQL generation)
 LLM_TEMPERATURE: float = float(os.getenv("LLM_TEMPERATURE", "0.0"))
@@ -103,13 +104,13 @@ LLM_REQUEST_TIMEOUT: int = int(os.getenv("LLM_REQUEST_TIMEOUT", "60"))
 # ── Orchestrator ──────────────────────────────────────────────────────────────
 
 # Max independent SQL queries the orchestrator may run per user question
-MAX_QUERY_ITERATIONS: int = int(os.getenv("MAX_QUERY_ITERATIONS", "3"))
+MAX_QUERY_ITERATIONS: int = int(os.getenv("MAX_QUERY_ITERATIONS", "5"))
 
 # Max planned queries (sub-queries) per user question.
 # This caps how many distinct query intents the planner may schedule; retries
 # within a single sub-query are governed separately by MAX_RETRIES.
 MAX_QUERIES_PER_QUESTION: int = int(
-    os.getenv("MAX_QUERIES_PER_QUESTION", "3")
+    os.getenv("MAX_QUERIES_PER_QUESTION", "4")
 )
 
 # Max retry attempts per SQL generation / execution cycle
@@ -149,6 +150,26 @@ SCHEMA_FILE_PATH: str = os.getenv(
 # How many previous chat turns to include as context when building LLM prompts.
 # This controls the depth of conversational memory per session.
 CHAT_CONTEXT_TURNS: int = int(os.getenv("CHAT_CONTEXT_TURNS", "3"))
+
+
+# ── DeepAnalyze (local vLLM report generation) ─────────────────────────────────
+
+# When True, "Generate report with DeepAnalyze" is available (requires local vLLM).
+DEEPANALYZE_ENABLED: bool = os.getenv("DEEPANALYZE_ENABLED", "false").lower() == "true"
+
+# Base URL of local vLLM OpenAI-compatible API (no DeepAnalyze API server).
+DEEPANALYZE_BASE_URL: str = os.getenv(
+    "DEEPANALYZE_BASE_URL",
+    "http://localhost:8000/v1",
+)
+
+# Model name as served by vLLM (must match vLLM's served name, usually the HF repo ID).
+DEEPANALYZE_MODEL: str = os.getenv("DEEPANALYZE_MODEL", "RUC-DataLab/DeepAnalyze-8B")
+
+# Timeout in seconds for report-generation requests.
+DEEPANALYZE_REQUEST_TIMEOUT: int = int(
+    os.getenv("DEEPANALYZE_REQUEST_TIMEOUT", "120"),
+)
 
 
 # ── Validation helper ─────────────────────────────────────────────────────────

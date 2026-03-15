@@ -33,6 +33,13 @@ from config import config
 from config.config import validate_config
 from utils.logger import configure_logging, get_logger
 
+# Optional: DeepAnalyze local report generation
+try:
+    from backend.deepanalyze_client import generate_report, DeepAnalyzeError
+except ImportError:
+    generate_report = None  # type: ignore[misc, assignment]
+    DeepAnalyzeError = Exception  # type: ignore[misc, assignment]
+
 # Bootstrap logging before anything else
 configure_logging(
     level=config.LOG_LEVEL,
@@ -65,6 +72,12 @@ def _init_session_state() -> None:
         "conn_manager":    None,
         "init_error":      None,
         "show_debug":      config.SHOW_DEBUG_INFO,
+        # DeepAnalyze report: last query result and generated report
+        "last_result_df":       None,
+        "last_result_question": "",
+        "last_result_sql":      None,
+        "last_deepanalyze_report": None,
+        "last_deepanalyze_error": None,
     }
     for key, val in defaults.items():
         if key not in st.session_state:
@@ -345,6 +358,97 @@ def _render_message(msg: dict) -> None:
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# DeepAnalyze report section (local vLLM, no API)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Max rows/chars to send to DeepAnalyze to stay within context limits.
+_DEEPANALYZE_MAX_ROWS = 500
+_DEEPANALYZE_MAX_CHARS = 35_000
+
+
+def _dataframe_to_report_data(df) -> str:
+    """Convert DataFrame to CSV string for report prompt, truncated."""
+    if df is None or df.empty:
+        return "(no data)"
+    subset = df.head(_DEEPANALYZE_MAX_ROWS)
+    csv_str = subset.to_csv(index=False)
+    if len(csv_str) > _DEEPANALYZE_MAX_CHARS:
+        csv_str = csv_str[:_DEEPANALYZE_MAX_CHARS] + "\n... [truncated]"
+    return csv_str
+
+
+def _render_deepanalyze_report_section() -> None:
+    """Render 'Generate report with DeepAnalyze' button and optional report/error."""
+    if not config.DEEPANALYZE_ENABLED:
+        return
+
+    last_df = st.session_state.get("last_result_df")
+    if last_df is not None and generate_report is not None:
+        if st.button("Generate report with DeepAnalyze", type="secondary"):
+            instruction = (
+                "Generate a concise data science report. "
+                f"User question: {st.session_state.get('last_result_question', '')}"
+            )
+            data_str = _dataframe_to_report_data(last_df)
+            with st.spinner("Generating report…"):
+                try:
+                    report = generate_report(instruction, data_str)
+                    st.session_state["last_deepanalyze_report"] = report
+                    st.session_state["last_deepanalyze_error"] = None
+                except DeepAnalyzeError as e:
+                    st.session_state["last_deepanalyze_report"] = None
+                    st.session_state["last_deepanalyze_error"] = str(e)
+            st.rerun()
+
+    if st.session_state.get("last_deepanalyze_report"):
+        with st.expander("DeepAnalyze report", expanded=True):
+            st.markdown(st.session_state["last_deepanalyze_report"])
+    if st.session_state.get("last_deepanalyze_error"):
+        st.error(st.session_state["last_deepanalyze_error"])
+
+    if config.DEEPANALYZE_ENABLED and last_df is None and st.session_state.get("messages"):
+        st.caption(
+            "Run a question above to enable **Generate report with DeepAnalyze** "
+            "(uses local vLLM; see docs/DEEPANALYZE_LOCAL.md)."
+        )
+
+    # Report from uploaded file (optional)
+    if config.DEEPANALYZE_ENABLED and generate_report is not None:
+        with st.expander("Report from uploaded file"):
+            uploaded = st.file_uploader(
+                "Upload CSV or Excel",
+                type=["csv", "xlsx", "xls"],
+                key="deepanalyze_file_upload",
+            )
+            if uploaded is not None and st.button("Generate report from file", key="deepanalyze_from_file"):
+                with st.spinner("Reading file and generating report…"):
+                    df_up = None
+                    try:
+                        if uploaded.name.lower().endswith(".csv"):
+                            df_up = pd.read_csv(uploaded)
+                        else:
+                            try:
+                                df_up = pd.read_excel(uploaded)
+                            except Exception as exc:
+                                st.error(
+                                    "Excel support requires openpyxl. Install with: pip install openpyxl. "
+                                    f"Error: {exc}"
+                                )
+                        if df_up is not None:
+                            data_str = _dataframe_to_report_data(df_up)
+                            instruction = "Generate a concise data science report for the following uploaded data."
+                            report = generate_report(instruction, data_str)
+                            st.session_state["last_deepanalyze_report"] = report
+                            st.session_state["last_deepanalyze_error"] = None
+                            st.rerun()
+                    except DeepAnalyzeError as e:
+                        st.session_state["last_deepanalyze_error"] = str(e)
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Failed to read file or generate report: {e}")
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Main app
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -381,6 +485,9 @@ def main() -> None:
     # ── Chat history ──────────────────────────────────────────────────────────
     for msg in st.session_state["messages"]:
         _render_message(msg)
+
+    # ── DeepAnalyze report (local vLLM) ────────────────────────────────────────
+    _render_deepanalyze_report_section()
 
     # ── Input box ─────────────────────────────────────────────────────────────
     question = st.chat_input(
@@ -498,6 +605,13 @@ def main() -> None:
                         "meta":    meta,
                     }
                     st.session_state["messages"].append(assistant_msg)
+
+                    # Store last result for DeepAnalyze report generation
+                    if result.error is None and getattr(result, "result_dataframe", None) is not None:
+                        st.session_state["last_result_df"] = result.result_dataframe
+                        st.session_state["last_result_question"] = question
+                        st.session_state["last_result_sql"] = result.sql_used
+                        st.session_state["last_deepanalyze_error"] = None
 
                 except Exception as exc:  # noqa: BLE001
                     err_msg = f"Unexpected error: {exc}"

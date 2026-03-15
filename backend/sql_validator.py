@@ -96,9 +96,9 @@ _TABLE_REF_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# Extract CTE names from WITH clauses so they are treated as valid local tables
+# Extract CTE names from WITH clauses (handles WITH cte1 AS (...), cte2 AS (...))
 _CTE_NAME_PATTERN = re.compile(
-    r"\bwith\s+([a-zA-Z_][\w]*)\s+as\s*\(",
+    r"(?:\bwith\b|,)\s+([a-zA-Z_][\w]*)\s+as\s*\(",
     re.IGNORECASE,
 )
 
@@ -209,32 +209,44 @@ class SQLValidator:
                 "Only SELECT statements are allowed."
             )
 
+    # SQL functions that can appear after FROM/JOIN and are NOT table references
+    _BUILTIN_TABLE_FUNCTIONS: set[str] = {
+        "unnest", "lateral", "generate_series", "values",
+        "json_each", "json_array_elements", "explode", "posexplode",
+        "sequence", "flatten", "transform",
+    }
+
     def _check_table_references(
         self, sql: str, result: ValidationResult, cte_names: set[str]
     ) -> None:
         if not self._known_tables:
-            # No schema loaded — skip check
             return
+
+        # Collect UNNEST/LATERAL aliases so they aren't flagged as unknown tables
+        unnest_aliases = {
+            m.group(1).lower()
+            for m in re.finditer(
+                r"UNNEST\s*\(.*?\)\s+(?:AS\s+)?(\w+)", sql, re.IGNORECASE
+            )
+        }
 
         matches = _TABLE_REF_PATTERN.findall(sql)
         for raw_ref in matches:
-            # Normalise: strip quotes/brackets, handle schema-qualified names
             ref = re.sub(r'[`"\[\]]', "", raw_ref).strip()
 
-            # Handle schema.table qualified names
             if "." in ref:
-                # Accept any schema-qualified reference — we only validate
-                # the table portion for simplicity
                 table_part = ref.split(".")[-1].lower()
             else:
                 table_part = ref.lower()
 
-            # Skip sub-query aliases, function calls, etc.
             if not re.match(r"^\w+$", table_part):
                 continue
 
-            # CTEs defined in WITH clauses are valid local tables
-            if table_part in cte_names:
+            if (
+                table_part in cte_names
+                or table_part in unnest_aliases
+                or table_part in self._BUILTIN_TABLE_FUNCTIONS
+            ):
                 continue
 
             if table_part and table_part not in self._known_tables:

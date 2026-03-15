@@ -118,6 +118,8 @@ class OrchestratorResult:
     interpretation_prompt_system:   str | None = None
     interpretation_prompt_messages: list[dict[str, Any]] | None = None
     error:             str | None = None   # Set if the pipeline failed completely
+    # Last result DataFrame (for DeepAnalyze report generation)
+    result_dataframe:  pd.DataFrame | None = None
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -383,6 +385,7 @@ class QueryOrchestrator:
             token_summary=self._token_summary(),
             interpretation_prompt_system=interpretation.prompt_system,
             interpretation_prompt_messages=interpretation.prompt_messages,
+            result_dataframe=final_execution.dataframe,
         )
 
     # ── Internal helpers ──────────────────────────────────────────────────────
@@ -417,10 +420,15 @@ class QueryOrchestrator:
                     model=config.LOW_MODEL,
                     messages=messages,
                     system=system,
-                    max_tokens=256,
+                    max_tokens=512,
                 )
 
             raw = response.content
+            # Strip markdown fences if the LLM wraps JSON in them
+            import re as _re
+            fence_match = _re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, _re.DOTALL)
+            if fence_match:
+                raw = fence_match.group(1)
             parsed = json.loads(raw)
             requires_multi = bool(parsed.get("requires_multiple_queries", False))
             queries = parsed.get("queries") or []

@@ -32,7 +32,11 @@ _HIGH_SIGNALS: list[str] = [
     r"\bcompare\b", r"\btrend\b", r"\byear.?over.?year\b", r"\byoy\b",
     r"\bforecast\b", r"\bpredict\b", r"\brank\b", r"\bperformance\b",
     r"\bcohort\b", r"\bsegment\b", r"\bcontribut\b", r"\bbreak.?down\b",
-    r"\battribut\b",
+    r"\battribut\b", r"\brca\b", r"\broot.?cause\b", r"\bfunnel\b",
+    r"\bconversion\b", r"\bdrop\b", r"\bdecline\b", r"\bincrease\b",
+    r"\bdecrease\b", r"\bchange\b", r"\bimpact\b", r"\banalysis\b",
+    r"\binsight\b", r"\bcorrelat\b", r"\bsession.*order\b",
+    r"\border.*session\b",
 ]
 
 # Words/phrases that strongly suggest LOW complexity

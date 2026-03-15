@@ -8,6 +8,8 @@ streamlit>=1.35.0
 
 # ── LLM ──────────────────────────────────────────────────────────────────────
 anthropic>=0.30.0
+# For DeepAnalyze local report generation (OpenAI-compatible client to vLLM).
+openai>=1.0.0
 
 # ── Database ──────────────────────────────────────────────────────────────────
 # Trino / Presto (primary — used by default via DATABASE_TYPE=trino)

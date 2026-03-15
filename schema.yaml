@@ -751,4 +751,35 @@ tables:
       viewed_banner_old: 0
       clicked_banner_old: 0
       dt: '2025-07-31'
-relationships: []
+relationships:
+  - from_table: hive.data_model.doc_consult_orders
+    from_column: order_id
+    to_table: hive.pre_analytics.doc_consult_metrics
+    to_column: order_id
+    type: one_to_one
+    description: Links raw order details to pre-aggregated order-level metrics
+  - from_table: hive.data_model.doc_consult_orders
+    from_column: customer_id
+    to_table: hive.pre_analytics.doc_consult_metrics
+    to_column: customer_id
+    description: Same customer across orders and metrics tables
+  - from_table: hive.data_model.doc_consult_orders
+    from_column: order_id
+    to_table: hive.mstr_tables.doc_consult_session_attribution
+    to_column: order_ids
+    type: special
+    description: "Session order_ids is comma-separated. Use: CROSS JOIN UNNEST(SPLIT(sa.order_ids, ',')) AS t(single_order_id) then JOIN on single_order_id = CAST(o.order_id AS VARCHAR)"
+
+join_notes: |
+  Key join patterns for Presto/Trino:
+  1. Orders <-> Metrics: Direct JOIN on order_id. Both tables share order_id, customer_id, doctor_name, doctor_type, order_source, and dt.
+  2. Orders <-> Sessions: session_attribution.order_ids is COMMA-SEPARATED.
+     - To join: CROSS JOIN UNNEST(SPLIT(sa.order_ids, ',')) AS t(single_order_id) then match single_order_id = CAST(o.order_id AS VARCHAR)
+     - Or for filtering: WHERE CONTAINS(SPLIT(sa.order_ids, ','), CAST(o.order_id AS VARCHAR))
+  3. All tables share dt (DATE) as partition column. ALWAYS filter on dt for query performance.
+  4. Table selection guide:
+     - hive.pre_analytics.doc_consult_metrics: Use for KPIs, aggregated counts (completed/cancelled/total orders, appointments), cohort metrics. Has pre-computed counts like completed_consult_orders, cancelled_consult_orders, total_consult_orders. Best for dashboards, trend analysis, and high-level breakdowns.
+     - hive.data_model.doc_consult_orders: Use for order-level deep dives, individual order investigation, detailed cancellation analysis (cancel_reason_text, canceled_at), pricing analysis (MRP, discounts, wallet, cashback), slot-level timing, patient demographics. Best for RCA and granular analysis.
+     - hive.mstr_tables.doc_consult_session_attribution: Use for funnel/conversion analysis, session-level engagement, traffic source analysis, platform breakdowns, widget performance, page interaction metrics (health concern, banner, tile clicks). Best for understanding user journey and conversion bottlenecks.
+  5. Common dimension columns across tables: doctor_type, doctor_name, doctor_specialization, order_source, customer_id, order_id, dt.
+  6. For RCA: Start with the metrics table to quantify the change, then drill into orders or sessions for root cause.

@@ -2,19 +2,19 @@
 LLM-powered result interpretation.
 
 ``ResultInterpreter`` takes a pandas DataFrame (the raw query result) and asks
-the LLM to produce a concise, stakeholder-friendly answer to the original
-question.
+the LLM to produce an analyst-grade answer to the original question.
 
-The interpretation prompt is carefully constrained to:
-* Ground the answer in actual query output.
-* Avoid speculation.
-* Cite specific numbers.
+The interpretation is designed to:
+* Ground the answer in actual query output with specific numbers.
+* Perform RCA-style reasoning when appropriate.
+* Identify patterns, outliers, and key contributors.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 import pandas as pd
+import numpy as np
 
 from llm.llm_client import LLMClient
 from llm.prompt_templates import (
@@ -26,7 +26,7 @@ from utils.logger import Timer, get_logger
 log = get_logger(__name__)
 
 # Max characters of the results table to include in the interpretation prompt
-_MAX_TABLE_CHARS = 2_000
+_MAX_TABLE_CHARS = 3_000
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -71,21 +71,15 @@ class ResultInterpreter:
         chat_history: list[dict[str, str]] | None = None,
     ) -> InterpretationResult:
         """
-        Ask the LLM to explain the query results in plain English.
+        Ask the LLM to explain the query results with analyst-grade depth.
 
-        Parameters
-        ----------
-        question:  Original user question.
-        sql:       SQL that was executed.
-        dataframe: Raw query results.
-        model:     Anthropic model ID to use for interpretation.
-
-        Returns
-        -------
-        :class:`InterpretationResult`
+        Computes lightweight summary statistics for numeric columns and
+        passes them alongside the table data so the LLM has both raw rows
+        and aggregate context for richer interpretation.
         """
-        row_count    = len(dataframe)
+        row_count = len(dataframe)
         results_table = self._format_table(dataframe)
+        result_stats = self._compute_stats(dataframe)
 
         messages, system = build_interpretation_messages(
             question=question,
@@ -93,6 +87,7 @@ class ResultInterpreter:
             results_table=results_table,
             row_count=row_count,
             chat_history=chat_history,
+            result_stats=result_stats,
         )
 
         log.info(
@@ -133,15 +128,17 @@ class ResultInterpreter:
         chat_history: list[dict[str, str]] | None = None,
     ) -> InterpretationResult:
         """
-        Generate an interpretation when the query returned zero rows.
+        Generate a helpful interpretation when the query returned zero rows.
 
-        This avoids asking the LLM to interpret an empty table and instead
-        produces a helpful "no data found" message.
+        Explains possible reasons and suggests adjustments.
         """
         answer = (
-            "The query executed successfully but returned no results. "
-            "This likely means no data matches the specified filters or "
-            "the time period has no activity."
+            "The query executed successfully but **returned no results**. "
+            "This could mean:\n"
+            "- The date range or filters are too restrictive — try broadening them.\n"
+            "- The data for that specific combination doesn't exist in the table.\n"
+            "- The partition date (`dt`) filter may not cover the requested period.\n\n"
+            "Could you try rephrasing with a broader date range or different filters?"
         )
         log.info("interpretation_empty_result", question=question)
         return InterpretationResult(
@@ -157,24 +154,59 @@ class ResultInterpreter:
     @staticmethod
     def _format_table(df: pd.DataFrame) -> str:
         """
-        Convert the first N rows of a DataFrame to a readable string.
-
-        The output is trimmed to ``_MAX_TABLE_CHARS`` characters to avoid
-        exceeding token limits.
+        Convert a DataFrame to a readable string, prioritising information
+        density over raw row count to stay within token budget.
         """
         if df.empty:
             return "(empty)"
 
         try:
-            text = df.head(50).to_string(index=False)
+            # For small results, show everything; for large, show top rows
+            show_rows = min(len(df), 60)
+            text = df.head(show_rows).to_string(index=False)
         except Exception:  # noqa: BLE001
-            cols  = ", ".join(df.columns.tolist())
-            text  = f"Columns: {cols}\n({len(df)} rows)"
+            cols = ", ".join(df.columns.tolist())
+            text = f"Columns: {cols}\n({len(df)} rows)"
 
         if len(text) > _MAX_TABLE_CHARS:
             text = text[:_MAX_TABLE_CHARS] + "\n... [table truncated for context]"
 
         return text
+
+    @staticmethod
+    def _compute_stats(df: pd.DataFrame) -> str:
+        """
+        Compute lightweight summary statistics for numeric columns.
+
+        Returns a compact string with sum/mean/min/max for each numeric
+        column, giving the LLM aggregate context alongside the raw rows.
+        This is token-efficient: ~50 chars per column vs. thousands for rows.
+        """
+        if df.empty or len(df) < 2:
+            return ""
+
+        numeric_cols = df.select_dtypes(include=[np.number]).columns.tolist()
+        if not numeric_cols:
+            return ""
+
+        lines = ["## Column statistics (numeric columns)"]
+        for col in numeric_cols[:15]:
+            try:
+                series = df[col].dropna()
+                if series.empty:
+                    continue
+                total = series.sum()
+                mean = series.mean()
+                mn = series.min()
+                mx = series.max()
+                lines.append(
+                    f"  {col}: sum={total:,.2f}, mean={mean:,.2f}, "
+                    f"min={mn:,.2f}, max={mx:,.2f}"
+                )
+            except Exception:  # noqa: BLE001
+                continue
+
+        return "\n".join(lines) if len(lines) > 1 else ""
 
     def interpret_multi(
         self,

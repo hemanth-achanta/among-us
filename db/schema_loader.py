@@ -198,8 +198,7 @@ class SchemaLoader:
     def format_layered_summary(self) -> str:
         """
         Return a compact summary of tables grouped by logical layer and subject.
-        This is intended for planning prompts so the LLM can choose
-        appropriately between raw / semi-processed / processed tables.
+        Includes relationship and join information for the planner.
         """
         by_layer: dict[str, list[str]] = {}
         for tname, tdef in self._schema["tables"].items():
@@ -218,6 +217,27 @@ class SchemaLoader:
                     lines.append(f"    {textwrap.shorten(desc, width=120, placeholder='…')}")
             lines.append("")
 
+        # Include relationships for the planner
+        relationships = self._schema.get("relationships", [])
+        if relationships:
+            lines.append("Table relationships:")
+            for rel in relationships:
+                if isinstance(rel, dict):
+                    ft = rel.get("from_table", "")
+                    fc = rel.get("from_column", "")
+                    tt = rel.get("to_table", "")
+                    tc = rel.get("to_column", "")
+                    desc = rel.get("description", "")
+                    lines.append(f"  - {ft}.{fc} -> {tt}.{tc}: {desc}")
+                else:
+                    lines.append(f"  - {rel}")
+            lines.append("")
+
+        join_notes = self._schema.get("join_notes", "")
+        if join_notes:
+            lines.append("Join guidance:")
+            lines.append(join_notes.strip())
+
         return "\n".join(lines).strip()
 
     # ── Internal helpers ──────────────────────────────────────────────────────
@@ -225,7 +245,8 @@ class SchemaLoader:
     def _format_tables_for_prompt(self, table_names: list[str]) -> str:
         """
         Internal helper to format a subset of tables for prompts.
-        Applies the same token-budget trimming as ``format_for_prompt``.
+        Includes relationships and join notes for multi-table context.
+        Applies token-budget trimming automatically.
         """
         lines: list[str] = []
 
@@ -235,11 +256,19 @@ class SchemaLoader:
             if not table_def:
                 continue
             description = table_def.get("description", "")
+            layer = table_def.get("layer", "")
+            subject = table_def.get("subject", "")
             lines.append(f"\n### Table: {table_name}")
+            meta_parts = []
+            if layer:
+                meta_parts.append(f"layer={layer}")
+            if subject:
+                meta_parts.append(f"subject={subject}")
+            if meta_parts:
+                lines.append(f"[{', '.join(meta_parts)}]")
             if description:
                 lines.append(f"Description: {description}")
 
-            # Columns
             lines.append("Columns:")
             for col_name, col_def in table_def["columns"].items():
                 col_type = col_def.get("type", "UNKNOWN")
@@ -249,7 +278,6 @@ class SchemaLoader:
                 else:
                     lines.append(f"  - {col_name} ({col_type})")
 
-            # Sample rows
             sample_rows = table_def.get("sample_rows", [])
             if sample_rows:
                 rows_to_show = sample_rows[: self._max_sample_rows]
@@ -257,12 +285,52 @@ class SchemaLoader:
                 for row in rows_to_show:
                     lines.append(f"  {json.dumps(row, default=str)}")
 
-        # ── Relationships ───────────────────────────────────────────────────
+        # ── Relationships (only those involving selected tables) ────────────
+        table_set = {t.lower() for t in table_names}
         relationships = self._schema.get("relationships", [])
-        if relationships:
+        relevant_rels = []
+        for rel in relationships:
+            if isinstance(rel, dict):
+                ft = str(rel.get("from_table", "")).lower()
+                tt = str(rel.get("to_table", "")).lower()
+                if ft in table_set or tt in table_set:
+                    relevant_rels.append(rel)
+            else:
+                relevant_rels.append(rel)
+
+        if relevant_rels:
             lines.append("\n### Relationships")
-            for rel in relationships:
-                lines.append(f"  - {rel}")
+            for rel in relevant_rels:
+                if isinstance(rel, dict):
+                    desc = rel.get("description", "")
+                    ft = rel.get("from_table", "")
+                    fc = rel.get("from_column", "")
+                    tt = rel.get("to_table", "")
+                    tc = rel.get("to_column", "")
+                    rtype = rel.get("type", "")
+                    line = f"  - {ft}.{fc} -> {tt}.{tc}"
+                    if rtype:
+                        line += f" ({rtype})"
+                    if desc:
+                        line += f": {desc}"
+                    lines.append(line)
+                else:
+                    lines.append(f"  - {rel}")
+
+        # ── Join notes (critical for correct multi-table queries) ───────────
+        join_notes = self._schema.get("join_notes", "")
+        if join_notes and len(table_names) > 1:
+            lines.append(f"\n### Join Notes\n{join_notes.strip()}")
+        elif join_notes and len(table_names) == 1:
+            # Even for single-table queries, include the table selection guide
+            guide_lines = []
+            for jline in join_notes.strip().split("\n"):
+                stripped = jline.strip()
+                if stripped.startswith("4.") or stripped.startswith("- hive."):
+                    guide_lines.append(jline)
+            if guide_lines:
+                lines.append("\n### Table context")
+                lines.extend(guide_lines)
 
         full_text = "\n".join(lines)
 
