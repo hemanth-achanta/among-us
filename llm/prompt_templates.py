@@ -182,6 +182,7 @@ RESULT_INTERPRETATION_USER = """\
 {sql}
 
 ## Query results ({row_count} rows)
+{result_truncation_note}
 {results_table}
 
 {result_stats}
@@ -325,6 +326,7 @@ def build_interpretation_messages(
     chat_history: list[dict[str, str]] | None = None,
     result_stats: str = "",
     business_context: str = "",
+    result_truncated_at_rows: int | None = None,
 ) -> tuple[list[dict[str, str]], str]:
     """
     Assemble messages for result interpretation.
@@ -349,6 +351,16 @@ def build_interpretation_messages(
 
     today_str = date.today().isoformat()
 
+    if result_truncated_at_rows is not None:
+        result_truncation_note = (
+            f"**Note:** This result set was truncated at the **system row limit** "
+            f"({result_truncated_at_rows} rows). The query may have returned more rows; "
+            f"later periods or cohorts may be missing. For full coverage (e.g. all cohorts), "
+            f"increase `MAX_RESULT_ROWS` in configuration (e.g. 500 or 1000) and re-run.\n\n"
+        )
+    else:
+        result_truncation_note = ""
+
     user_content = RESULT_INTERPRETATION_USER.format(
         question=question,
         sql=sql,
@@ -358,6 +370,7 @@ def build_interpretation_messages(
         result_stats=result_stats,
         today=today_str,
         business_context=business_context,
+        result_truncation_note=result_truncation_note,
     )
     return [{"role": "user", "content": user_content}], RESULT_INTERPRETATION_SYSTEM
 
@@ -392,16 +405,25 @@ table relationships and know when to JOIN tables in a single query vs. run \
 separate queries.
 
 ## Planning Rules
+0. **Default to a SINGLE query (strict).** Your first responsibility is to design \
+   a single, well-structured SQL query that answers the user's question. Set \
+   "requires_multiple_queries": false by default. Only when you cannot reasonably \
+   express the analysis in one query (even using CTEs, JOINs, CASE expressions, \
+   and GROUP BY) may you plan a second or third query. When you do set \
+   "requires_multiple_queries": true, make sure each additional query has a clear, \
+   non-overlapping purpose that truly cannot be folded into the first query.
 1. **Prefer JOINs over separate queries** when data must be correlated row-by-row \
 (e.g., "orders with their session source" needs a JOIN, not 2 queries).
 2. **Use separate queries** when you need independent aggregations from different \
 tables that don't need row-level correlation (e.g., "total orders AND total sessions").
-3. For **RCA questions** ("why did X drop?"):
-   - Query 1: Quantify the change (compute the metric for both periods)
-   - Query 2: Break down by key dimensions to isolate the driver
-   - Query 3 (optional): Drill into the top contributing segment
+3. For **RCA questions** ("why did X drop?"), first attempt to answer using a \
+   single query that compares periods and breaks down by key dimensions via CTEs \
+   and aggregations. Only when this is clearly not possible should you plan more \
+   than one query, and then keep the number of queries to the absolute minimum. \
+   Never split work into multiple queries just for convenience when a single \
+   query with appropriate joins and aggregations would suffice.
 4. You are NOT writing SQL — only planning intents.
-5. At most {max_queries} planned queries.
+5. At most {max_queries} planned queries (this is a hard upper bound, not a target).
 6. **ALWAYS specify candidate_tables** — this is critical for keeping prompts lean.
 7. When a single query needs data from multiple tables, list ALL required tables \
 in candidate_tables so the SQL generator receives the full schema for JOINs.
@@ -502,11 +524,17 @@ def build_multi_interpretation_messages(
         sql = q.get("sql", "")
         results_table = q.get("results_table", "")
         row_count = q.get("row_count", 0)
+        truncated_at = q.get("truncated_at_rows")
         parts.append(f"\n### {label}")
         parts.append("SQL:")
         parts.append(sql)
         parts.append("")
         parts.append(f"Results ({row_count} rows)")
+        if truncated_at is not None:
+            parts.append(
+                f"**Note:** Result truncated at system row limit ({truncated_at} rows). "
+                "Increase MAX_RESULT_ROWS for full coverage."
+            )
         parts.append(results_table)
         parts.append("")
 

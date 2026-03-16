@@ -90,7 +90,9 @@ _VALID_START_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
-# Extract table names from FROM and JOIN clauses (simple heuristic)
+#! Extract table names from FROM and JOIN clauses (simple heuristic).
+#! NOTE: The downstream validator must additionally guard against treating
+#! bare SQL keywords (INNER, LEFT, ORDER, AS, etc.) as table names.
 _TABLE_REF_PATTERN = re.compile(
     r"(?:FROM|JOIN)\s+([`\"\[]?[\w.]+[`\"\]]?)(?:\s+(?:AS\s+)?[\w]+)?",
     re.IGNORECASE,
@@ -101,6 +103,15 @@ _CTE_NAME_PATTERN = re.compile(
     r"(?:\bwith\b|,)\s+([a-zA-Z_][\w]*)\s+as\s*\(",
     re.IGNORECASE,
 )
+
+# Common SQL reserved keywords that should never be treated as table names.
+_RESERVED_KEYWORDS: set[str] = {
+    "SELECT", "FROM", "WHERE", "GROUP", "BY", "HAVING", "ORDER", "LIMIT",
+    "OFFSET", "JOIN", "INNER", "LEFT", "RIGHT", "FULL", "OUTER", "CROSS", "ON",
+    "USING", "UNION", "ALL", "DISTINCT", "AS", "AND", "OR", "NOT", "IN",
+    "BETWEEN", "LIKE", "IS", "NULL", "CASE", "WHEN", "THEN", "ELSE", "END",
+    "WITH", "EXISTS", "LATERAL",
+}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -240,6 +251,10 @@ class SQLValidator:
                 table_part = ref.lower()
 
             if not re.match(r"^\w+$", table_part):
+                continue
+
+            # Ignore SQL reserved keywords and join modifiers that are not tables.
+            if table_part.upper() in _RESERVED_KEYWORDS:
                 continue
 
             if (

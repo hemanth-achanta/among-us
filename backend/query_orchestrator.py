@@ -451,6 +451,8 @@ class QueryOrchestrator:
                         model=final_model,
                         chat_history=chat_history,
                         business_context=business_context,
+                        result_truncated=final_execution.truncated,
+                        result_max_rows=config.MAX_RESULT_ROWS,
                     )
                     rows_returned = final_execution.row_count
                     final_sql = final_execution.sql_executed
@@ -470,6 +472,8 @@ class QueryOrchestrator:
                         labels=labels,
                         chat_history=chat_history,
                         business_context=business_context,
+                        truncated_flags=[er.truncated for er in executed_results],
+                        result_max_rows=config.MAX_RESULT_ROWS,
                     )
                     # For summary metrics, report the rows from the last execution.
                     final_execution = executed_results[-1]

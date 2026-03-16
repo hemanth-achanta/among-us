@@ -60,7 +60,9 @@ DB_MAX_OVERFLOW:  int = int(os.getenv("DB_MAX_OVERFLOW", "10"))
 DB_POOL_TIMEOUT:  int = int(os.getenv("DB_POOL_TIMEOUT", "30"))
 DB_POOL_RECYCLE:  int = int(os.getenv("DB_POOL_RECYCLE", "1800"))
 
-# Max rows returned from any single query
+# Max rows returned from any single query (executor cap; SQL LIMIT is separate).
+# Cohort/retention analyses (e.g. MoM retention) can need 15+ cohorts × 15 months = 225+ rows;
+# set to 500 or 1000 if you see "truncated at N rows" for such queries.
 MAX_RESULT_ROWS: int = int(os.getenv("MAX_RESULT_ROWS", "500"))
 
 
@@ -132,8 +134,11 @@ MAX_QUERY_ITERATIONS: int = int(os.getenv("MAX_QUERY_ITERATIONS", "5"))
 # Max planned queries (sub-queries) per user question.
 # This caps how many distinct query intents the planner may schedule; retries
 # within a single sub-query are governed separately by MAX_RETRIES.
+# Default is intentionally conservative (3) so the planner strongly prefers a
+# single well-structured query (per the planning prompt) but still has room
+# to schedule a small number of genuinely necessary sub-queries.
 MAX_QUERIES_PER_QUESTION: int = int(
-    os.getenv("MAX_QUERIES_PER_QUESTION", "4")
+    os.getenv("MAX_QUERIES_PER_QUESTION", "3")
 )
 
 # Max retry attempts per SQL generation / execution cycle

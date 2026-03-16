@@ -12,6 +12,7 @@ The interpretation is designed to:
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 import pandas as pd
 import numpy as np
@@ -81,6 +82,8 @@ class ResultInterpreter:
         model: str,
         chat_history: list[dict[str, str]] | None = None,
         business_context: str = "",
+        result_truncated: bool = False,
+        result_max_rows: int | None = None,
     ) -> InterpretationResult:
         """
         Ask the LLM to explain the query results with analyst-grade depth.
@@ -93,6 +96,10 @@ class ResultInterpreter:
         results_table, table_meta = self._format_table_with_meta(dataframe)
         result_stats = self._compute_stats(dataframe)
 
+        result_truncated_at_rows = (
+            result_max_rows if (result_truncated and result_max_rows is not None) else None
+        )
+
         messages, system = build_interpretation_messages(
             question=question,
             sql=sql,
@@ -101,6 +108,7 @@ class ResultInterpreter:
             chat_history=chat_history,
             result_stats=result_stats,
             business_context=business_context,
+            result_truncated_at_rows=result_truncated_at_rows,
         )
 
         log.info(
@@ -262,6 +270,8 @@ class ResultInterpreter:
         labels: list[str] | None = None,
         chat_history: list[dict[str, str]] | None = None,
         business_context: str = "",
+        truncated_flags: list[bool] | None = None,
+        result_max_rows: int | None = None,
     ) -> InterpretationResult:
         """
         Interpret multiple result sets that together answer the user's question.
@@ -289,19 +299,25 @@ class ResultInterpreter:
                 prompt_messages=[],
             )
 
-        queries_payload: list[dict[str, str]] = []
+        queries_payload: list[dict[str, Any]] = []
         for idx, (sql, df) in enumerate(zip(sql_list, dataframes), start=1):
             label = labels[idx - 1] if labels and idx - 1 < len(labels) else f"Query {idx}"
             results_table = self._format_table(df)
             row_count = len(df)
-            queries_payload.append(
-                {
-                    "label": label,
-                    "sql": sql,
-                    "results_table": results_table,
-                    "row_count": str(row_count),
-                }
+            truncated = (
+                truncated_flags[idx - 1]
+                if truncated_flags and idx - 1 < len(truncated_flags)
+                else False
             )
+            payload: dict[str, Any] = {
+                "label": label,
+                "sql": sql,
+                "results_table": results_table,
+                "row_count": str(row_count),
+            }
+            if truncated and result_max_rows is not None:
+                payload["truncated_at_rows"] = result_max_rows
+            queries_payload.append(payload)
 
         messages, system = build_multi_interpretation_messages(
             question=question,

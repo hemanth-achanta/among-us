@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any
 
 from utils.logger import get_logger
+from config import config
 
 log = get_logger(__name__)
 
@@ -72,12 +73,15 @@ class ConversationLogger:
         self._truncation_events: list[dict[str, Any]] = []
         self._started_at = datetime.now(timezone.utc)
         self._finalized = False
+        self._step_index: int = 0
 
     def log_stage(self, stage: str, **data: Any) -> None:
         """Append a pipeline stage event."""
+        self._step_index += 1
         entry: dict[str, Any] = {
             "stage": stage,
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "step_index": self._step_index,
             **data,
         }
         self._stages.append(entry)
@@ -129,9 +133,27 @@ class ConversationLogger:
         naturally; "max_tokens" means the output was truncated.
         """
         was_truncated = stop_reason == "max_tokens"
+        self._step_index += 1
+
+        # Estimate per-call API cost using the shared MODEL_PRICING config.
+        pricing: dict[str, tuple[float, float]] = getattr(config, "MODEL_PRICING", {})
+        default_per_million: tuple[float, float] = (3.0, 15.0)
+        in_per_m, out_per_m = pricing.get(model, default_per_million)
+        cost_input_usd = (input_tokens / 1_000_000.0) * in_per_m
+        cost_output_usd = (output_tokens / 1_000_000.0) * out_per_m
+        total_cost_usd = round(cost_input_usd + cost_output_usd, 8)
+
+        # Optionally express cost in configured display currency.
+        display_currency = getattr(config, "COST_DISPLAY_CURRENCY", "USD")
+        usd_to_inr = getattr(config, "USD_TO_INR", 92.0)
+        if display_currency == "INR":
+            total_cost_display = round(total_cost_usd * usd_to_inr, 6)
+        else:
+            total_cost_display = total_cost_usd
         entry: dict[str, Any] = {
             "stage": f"llm_call__{purpose}",
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "step_index": self._step_index,
             "model": model,
             "prompt_system": prompt_system,
             "prompt_system_length": len(prompt_system),
@@ -145,6 +167,9 @@ class ConversationLogger:
             "output_was_truncated": was_truncated,
             "input_tokens": input_tokens,
             "output_tokens": output_tokens,
+            "estimated_cost_usd": total_cost_usd,
+            "estimated_cost_display": total_cost_display,
+            "cost_display_currency": display_currency,
             "max_tokens_budget": max_tokens_budget,
             "duration_ms": round(duration_ms, 1),
             **extra,
@@ -175,9 +200,11 @@ class ConversationLogger:
         preview: str = "",
     ) -> None:
         """Record the shape and a preview of a DataFrame at a pipeline stage."""
+        self._step_index += 1
         self._stages.append({
             "stage": f"data_snapshot__{label}",
             "timestamp": datetime.now(timezone.utc).isoformat(),
+            "step_index": self._step_index,
             "row_count": row_count,
             "column_count": column_count,
             "column_names": column_names,
