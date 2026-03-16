@@ -17,6 +17,9 @@ fi
 # Create log directory
 mkdir -p logs
 
+# Ensure dependencies (including plotly for charts)
+pip install -q -r requirements.txt 2>/dev/null || true
+
 echo "Starting Analytics Assistant..."
 # Run from app/ so Streamlit finds app/pages/ (Admin Context Manager, etc.)
 cd app && streamlit run streamlit_app.py \

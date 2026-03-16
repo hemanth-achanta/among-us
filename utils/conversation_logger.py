@@ -206,12 +206,34 @@ class ConversationLogger:
         if self._finalized:
             return str(self._log_dir / f"{self.conversation_id}.json")
 
+        # Full session chat: prior turns + current user question + current assistant answer (with meta)
+        assistant_meta: dict[str, Any] = {
+            "sql_used": sql_used,
+            "rows_returned": rows_returned,
+            "model_used": model_used,
+            "complexity": complexity,
+            "query_iterations": query_iterations,
+            "total_duration_ms": round(total_duration_ms, 1),
+            "token_summary": token_summary or {},
+            "error": error,
+        }
+        session_chat: list[dict[str, Any]] = [
+            *self.chat_history_sent,
+            {"role": "user", "content": self.question},
+            {
+                "role": "assistant",
+                "content": answer,
+                "meta": assistant_meta,
+            },
+        ]
+
         trace: dict[str, Any] = {
             "conversation_id": self.conversation_id,
             "started_at": self._started_at.isoformat(),
             "finished_at": datetime.now(timezone.utc).isoformat(),
             "question": self.question,
             "chat_history_sent": self.chat_history_sent,
+            "session_chat": session_chat,
             "final_result": {
                 "answer": answer,
                 "answer_length": len(answer),

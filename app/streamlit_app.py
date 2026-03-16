@@ -70,6 +70,12 @@ st.set_page_config(
 
 def _init_session_state() -> None:
     """Initialise all session-state keys with sensible defaults."""
+    try:
+        import plotly.graph_objects  # noqa: F401
+        plotly_available = True
+    except ImportError:
+        plotly_available = False
+
     defaults = {
         "messages":        [],      # list of {"role": "user"|"assistant", "content": ..., "meta": ...}
         "orchestrator":    None,
@@ -78,6 +84,7 @@ def _init_session_state() -> None:
         "conn_manager":    None,
         "init_error":      None,
         "show_debug":      config.SHOW_DEBUG_INFO,
+        "plotly_available": plotly_available,
         # DeepAnalyze report: last query result and generated report
         "last_result_df":       None,
         "last_result_question": "",
@@ -88,6 +95,8 @@ def _init_session_state() -> None:
     for key, val in defaults.items():
         if key not in st.session_state:
             st.session_state[key] = val
+    # Re-check plotly on every run so we detect it after pip install
+    st.session_state["plotly_available"] = plotly_available
 
 
 def _build_pipeline(schema_def: object) -> None:
@@ -199,6 +208,14 @@ def _render_sidebar() -> None:
 
         # ── Status ───────────────────────────────────────────────────────────
         st.subheader("Status")
+        plotly_ok = st.session_state.get("plotly_available", True)
+        if plotly_ok:
+            st.caption("📈 **Charts:** enabled")
+        else:
+            st.warning(
+                "📈 **Charts:** disabled — plotly not installed. "
+                "Run: `pip install plotly` then refresh."
+            )
         if st.session_state["init_error"]:
             st.error(f"Init error: {st.session_state['init_error']}")
         elif st.session_state["orchestrator"] is not None:
@@ -321,6 +338,20 @@ def _render_sidebar() -> None:
                             st.error(f"Failed to load: {e}")
                 else:
                     st.caption("No conversation logs yet.")
+                if st.button("Clear conversation logs", use_container_width=True, key="clear_conv_logs"):
+                    removed = 0
+                    for p in log_dir.glob("*.json"):
+                        try:
+                            p.unlink()
+                            removed += 1
+                        except OSError:
+                            pass
+                    if removed:
+                        st.session_state["_browsed_trace"] = None
+                        st.success(f"Cleared {removed} log file(s).")
+                    else:
+                        st.info("No log files to clear.")
+                    st.rerun()
             else:
                 st.caption("Log directory not created yet.")
 
@@ -340,6 +371,15 @@ def _render_message(msg: dict) -> None:
                 sec = duration_ms / 1000.0
                 st.caption(f"This took **{sec:.1f}** seconds.")
         st.markdown(msg["content"])
+
+        # Render Plotly chart when present
+        if meta and meta.get("plotly_figure") and msg["role"] == "assistant":
+            try:
+                import plotly.graph_objects as go
+                fig = go.Figure(meta["plotly_figure"])
+                st.plotly_chart(fig, use_container_width=True)
+            except Exception as chart_err:  # noqa: BLE001
+                st.warning(f"Chart rendering failed: {chart_err}")
 
         if not meta or msg["role"] != "assistant":
             return
@@ -720,15 +760,32 @@ def main() -> None:
 
     # ── Input box ─────────────────────────────────────────────────────────────
     question = st.chat_input(
-        placeholder="e.g. What were the top 5 products by revenue last month?",
+        placeholder="e.g. What were the top 5 products by revenue last month? Or PLOT: show monthly trend",
         disabled=st.session_state["orchestrator"] is None,
     )
 
     if question:
-        # Display user message immediately
+        # PLOT: prefix "PLOT"/"PLOT:" or natural language ("plot a chart", "show a graph", etc.) requests a chart
+        raw_question = question.strip()
+        request_plot = raw_question.upper().startswith("PLOT")
+        if request_plot:
+            question = raw_question[4:].lstrip(" :").strip() or raw_question
+            if not question:
+                question = raw_question
+                request_plot = False
+        # Also treat natural-language chart requests (even without PLOT prefix)
+        if not request_plot and raw_question:
+            q_lower = raw_question.lower()
+            chart_phrases = (
+                "plot", "chart", "graph", "visualize", "visualization",
+                "show me a chart", "draw a chart", "show a chart", "show a graph",
+            )
+            request_plot = any(p in q_lower for p in chart_phrases)
+
+        # Display user message immediately (show original input including PLOT)
         st.session_state["messages"].append({
             "role":    "user",
-            "content": question,
+            "content": raw_question,
         })
         _render_message(st.session_state["messages"][-1])
 
@@ -804,10 +861,11 @@ def main() -> None:
                                 _progress_callback if live_debug_placeholder else None
                             ),
                             status_callback=_status_callback,
+                            request_plot=request_plot,
                         )
                     except TypeError as exc:
                         # Backwards compatibility for older orchestrator instances
-                        if "status_callback" in str(exc) or "progress_callback" in str(exc):
+                        if "status_callback" in str(exc) or "progress_callback" in str(exc) or "request_plot" in str(exc):
                             result = orchestrator.run(
                                 question,
                                 chat_history=chat_history,
@@ -849,6 +907,7 @@ def main() -> None:
                     "total_duration_ms": result.total_duration_ms,
                     "token_summary":     result.token_summary,
                     "error":             result.error,
+                    "plotly_figure":    getattr(result, "plotly_figure", None),
                 }
 
                 assistant_msg = {

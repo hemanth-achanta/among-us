@@ -57,6 +57,20 @@ from app.business_context import format_approved_for_prompt
 
 log = get_logger(__name__)
 
+# Phrases that indicate the user wants a chart (backend-side detection so chart is built even if UI didn't pass request_plot)
+_CHART_PHRASES = (
+    "plot", "chart", "graph", "visualize", "visualization",
+    "show me a chart", "draw a chart", "show a chart", "show a graph",
+)
+
+
+def _question_asks_for_chart(question: str) -> bool:
+    """True if the question text indicates the user wants a chart."""
+    if not question or not question.strip():
+        return False
+    q = question.lower().strip()
+    return any(p in q for p in _CHART_PHRASES)
+
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Intermediate step (for UI debug display)
@@ -122,6 +136,8 @@ class OrchestratorResult:
     error:             str | None = None   # Set if the pipeline failed completely
     # Last result DataFrame (for DeepAnalyze report generation)
     result_dataframe:  pd.DataFrame | None = None
+    # Plotly figure as dict (for PLOT command; serializable for UI)
+    plotly_figure:     dict | None = None
     # Per-conversation trace log identifier
     conversation_id:   str | None = None
 
@@ -202,6 +218,7 @@ class QueryOrchestrator:
         chat_history: list[dict[str, str]] | None = None,
         progress_callback: Optional[Callable[[QueryStep], None]] = None,
         status_callback: Optional[Callable[[str], None]] = None,
+        request_plot: bool = False,
     ) -> OrchestratorResult:
         """
         Execute the full analytics pipeline for *question*.
@@ -211,6 +228,8 @@ class QueryOrchestrator:
         question: Natural-language question from the stakeholder.
         status_callback: Called with a short human-readable status string at
                          each major pipeline stage (for live UI updates).
+        request_plot: If True and the query returns data, build a Plotly chart
+                      and attach it to the result for the UI to display.
 
         Returns
         -------
@@ -510,6 +529,31 @@ class QueryOrchestrator:
             interpretation_prompt_messages=interpretation.prompt_messages,
             result_dataframe=final_execution.dataframe,
         )
+
+        # Build chart when UI requested it OR when the question clearly asks for a chart
+        want_chart = request_plot or _question_asks_for_chart(question)
+        if want_chart and final_execution.dataframe is not None and not final_execution.dataframe.empty:
+            from backend.chart_builder import build_chart
+            try:
+                fig_dict = build_chart(
+                    final_execution.dataframe,
+                    question_hint=question,
+                    llm_client=self._llm,
+                )
+                if fig_dict is not None:
+                    orch_result.plotly_figure = fig_dict
+                    log.info("plot_attached", rows=len(final_execution.dataframe), requested_by_ui=request_plot)
+                else:
+                    log.warning(
+                        "plot_not_built",
+                        reason="build_chart_returned_none",
+                        rows=len(final_execution.dataframe),
+                        columns=list(final_execution.dataframe.columns),
+                    )
+            except Exception as e:  # noqa: BLE001
+                log.warning("plot_build_failed", error=str(e))
+        elif want_chart and (final_execution.dataframe is None or final_execution.dataframe.empty):
+            log.info("plot_skipped", reason="no_data")
 
         if clog:
             orch_result.conversation_id = clog.conversation_id
